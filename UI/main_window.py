@@ -1,7 +1,7 @@
 # UI/main_window.py
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QLabel,
                               QPushButton, QMessageBox, QHBoxLayout, QFrame,
-                              QGraphicsDropShadowEffect, QSizePolicy)
+                              QGraphicsDropShadowEffect, QSizePolicy, QToolButton)
 from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect, QTimer
 from PyQt5.QtGui import QFont, QColor, QLinearGradient, QPainter, QPalette
 import sys
@@ -15,7 +15,7 @@ from UI.productos_ui import VentanaProductos
 from UI.caja_ui import VentanaCaja
 from UI.apartados_ui import VentanaApartados
 from UI.reportes_ui import VentanaReportes
-from UI.usuario_ui import VentanaGestionUsuarios   # ← Importación agregada
+from UI.usuario_ui import VentanaGestionUsuarios
 
 
 # ── Paleta de colores ────────────────────────────────────────────────────────
@@ -36,8 +36,8 @@ C_GRAY_700      = "#374151"
 class SidebarButton(QPushButton):
     def __init__(self, icon: str, text: str, parent=None):
         super().__init__(parent)
-        self._icon = icon
-        self._text = text
+        self.original_icon = icon
+        self.original_text = text
         self._active = False
         self.setText(f"  {icon}   {text}")
         self.setFixedHeight(46)
@@ -131,6 +131,14 @@ class MainWindow(QMainWindow):
         self.db = DatabaseConnection()
         self.id_caja_actual = None
         self._sidebar_buttons: dict[str, SidebarButton] = {}
+        self.sidebar_width_expanded = 255
+        self.sidebar_width_collapsed = 70
+        self.sidebar_animation = None
+        self.sidebar_collapsed = False
+        self.leave_timer = QTimer()
+        self.leave_timer.setSingleShot(True)
+        self.leave_timer.timeout.connect(self.collapse_sidebar)
+
         self.init_ui()
         self.verificar_caja_abierta()
         # Arrancar directamente en Caja
@@ -161,144 +169,189 @@ class MainWindow(QMainWindow):
         self.content_area.setLayout(self.content_layout)
         main_layout.addWidget(self.content_area, 1)
 
-    # ── Sidebar ───────────────────────────────────────────────────────────────
+    # ── Sidebar colapsable ───────────────────────────────────────────────────
     def _crear_sidebar(self):
         sidebar = QFrame()
-        sidebar.setFixedWidth(255)
-        sidebar.setStyleSheet(f"background-color: {C_SIDEBAR_BG};")
+        sidebar.setFixedWidth(self.sidebar_width_expanded)
+        sidebar.setStyleSheet(f"background-color: {C_SIDEBAR_BG}; border: none;")
+        self.sidebar = sidebar
 
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(24)
-        shadow.setOffset(4, 0)
-        shadow.setColor(QColor(0, 0, 0, 80))
-        sidebar.setGraphicsEffect(shadow)
-
-        layout = QVBoxLayout()
-        layout.setContentsMargins(14, 28, 14, 28)
-        layout.setSpacing(4)
-
-        # Logo
-        logo_frame = QFrame()
-        logo_frame.setStyleSheet(f"""
-            QFrame {{
+        # Botón de hamburguesa (colapsar/expandir)
+        btn_menu = QToolButton()
+        btn_menu.setText("☰")
+        btn_menu.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        btn_menu.setStyleSheet(f"""
+            QToolButton {{
                 background-color: {C_AMARILLO};
-                border-radius: 12px;
+                color: #111;
+                border-radius: 8px;
+                padding: 6px;
+            }}
+            QToolButton:hover {{
+                background-color: {C_AMARILLO_DARK};
             }}
         """)
-        logo_lay = QHBoxLayout(logo_frame)
-        logo_lay.setContentsMargins(14, 8, 14, 8)
-        logo_lay.setSpacing(8)
+        btn_menu.setCursor(Qt.PointingHandCursor)
+        btn_menu.clicked.connect(self.toggle_sidebar)
 
-        tec_lbl = QLabel("TEC")
-        tec_lbl.setFont(QFont("Arial Black", 15, QFont.Black))
-        tec_lbl.setStyleSheet("color: #111111; background: transparent;")
-        shop_lbl = QLabel("SHOP")
-        shop_lbl.setFont(QFont("Arial", 15, QFont.Bold))
-        shop_lbl.setStyleSheet("color: #333333; background: transparent;")
-        dot_lbl = QLabel("🛒")
-        dot_lbl.setFont(QFont("Segoe UI Emoji", 16))
-        dot_lbl.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout()
+        layout.setContentsMargins(12, 18, 12, 18)
+        layout.setSpacing(8)
 
-        logo_lay.addWidget(dot_lbl)
-        logo_lay.addWidget(tec_lbl)
-        logo_lay.addWidget(shop_lbl)
+        # Logo (se adaptará al modo colapsado)
+        self.logo_frame = QFrame()
+        self.logo_frame.setStyleSheet(f"background-color: {C_AMARILLO}; border-radius: 12px;")
+        logo_lay = QHBoxLayout(self.logo_frame)
+        logo_lay.setContentsMargins(8, 6, 8, 6)
+
+        self.dot_lbl = QLabel("🛒")
+        self.dot_lbl.setFont(QFont("Segoe UI Emoji", 18))
+        self.tec_lbl = QLabel("TEC")
+        self.tec_lbl.setFont(QFont("Arial Black", 14, QFont.Black))
+        self.shop_lbl = QLabel("SHOP")
+        self.shop_lbl.setFont(QFont("Arial", 14, QFont.Bold))
+
+        logo_lay.addWidget(self.dot_lbl)
+        logo_lay.addWidget(self.tec_lbl)
+        logo_lay.addWidget(self.shop_lbl)
         logo_lay.addStretch()
-        layout.addWidget(logo_frame)
 
-        layout.addSpacing(6)
+        # Agregar botón menú arriba del logo
+        layout.addWidget(btn_menu, alignment=Qt.AlignLeft)
+        layout.addSpacing(8)
+        layout.addWidget(self.logo_frame)
 
-        # Separador sutil
-        sep_lbl = QLabel("MENÚ PRINCIPAL")
-        sep_lbl.setFont(QFont("Segoe UI", 8, QFont.Bold))
-        sep_lbl.setStyleSheet(f"color: #4B5563; letter-spacing: 1.5px; padding: 10px 6px 4px 6px;")
-        layout.addWidget(sep_lbl)
+        # Separador "MENÚ PRINCIPAL" (se oculta en colapsado)
+        self.sep_lbl = QLabel("MENÚ PRINCIPAL")
+        self.sep_lbl.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        self.sep_lbl.setStyleSheet(f"color: #4B5563; letter-spacing: 1.5px; padding: 8px 4px 2px 4px;")
+        layout.addWidget(self.sep_lbl)
 
         # Botones de navegación
         nav_items = [
-            ("🏠", "Dashboard",  self.show_dashboard),
-            ("🛍️", "Ventas",     self.show_ventas),
-            ("👥", "Clientes",   self.show_clientes),
-            ("📦", "Productos",  self.show_productos),
-            ("🏦", "Caja",       self.show_caja),
-            ("📋", "Apartados",  self.show_apartados),
+            ("🏠", "Dashboard", self.show_dashboard),
+            ("🛍️", "Ventas", self.show_ventas),
+            ("👥", "Clientes", self.show_clientes),
+            ("📦", "Productos", self.show_productos),
+            ("🏦", "Caja", self.show_caja),
+            ("📋", "Apartados", self.show_apartados),
         ]
-
         if self.usuario_data['rol'].lower() in ['gerente', 'supervisor', 'admin', 'administrador']:
             nav_items.append(("📊", "Reportes", self.show_reportes))
-
-        # Botón de Usuarios (solo para administradores)
         if self.usuario_data['rol'].lower() in ['admin', 'administrador']:
             nav_items.append(("🔐", "Usuarios", self.show_usuarios))
 
         for icon, texto, callback in nav_items:
             btn = SidebarButton(icon, texto)
-
-            def _make_cb(cb, name):
-                def _cb():
-                    cb()
-                    self._set_active_btn(name)
-                return _cb
-
-            btn.clicked.connect(_make_cb(callback, texto))
+            btn.clicked.connect(lambda checked, cb=callback, name=texto: (cb(), self._set_active_btn(name)))
             self._sidebar_buttons[texto] = btn
             layout.addWidget(btn)
 
         layout.addStretch()
 
-        # ── Separador ──
-        line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet("color: #1F2937;")
-        layout.addWidget(line)
-        layout.addSpacing(8)
+        # Panel de usuario (también se adapta)
+        self.user_frame = QFrame()
+        self.user_frame.setStyleSheet("background-color: #1F2937; border-radius: 14px;")
+        u_lay = QVBoxLayout(self.user_frame)
+        u_lay.setContentsMargins(12, 12, 12, 12)
 
-        # ── Panel de usuario ──
-        user_frame = QFrame()
-        user_frame.setStyleSheet(f"""
-            QFrame {{
-                background-color: #1F2937;
-                border-radius: 14px;
-            }}
-        """)
-        u_lay = QVBoxLayout(user_frame)
-        u_lay.setContentsMargins(14, 14, 14, 14)
-        u_lay.setSpacing(4)
+        self.avatar_lbl = QLabel("👤  " + self.usuario_data['nombre'])
+        self.avatar_lbl.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        self.avatar_lbl.setStyleSheet(f"color: {C_WHITE};")
+        self.rol_lbl = QLabel(f"🔑  {self.usuario_data['rol'].capitalize()}")
+        self.rol_lbl.setFont(QFont("Segoe UI", 9))
+        self.rol_lbl.setStyleSheet(f"color: {C_GRAY_400};")
 
-        avatar = QLabel("👤  " + self.usuario_data['nombre'])
-        avatar.setFont(QFont("Segoe UI", 12, QFont.Bold))
-        avatar.setStyleSheet(f"color: {C_WHITE}; background: transparent;")
-        u_lay.addWidget(avatar)
+        u_lay.addWidget(self.avatar_lbl)
+        u_lay.addWidget(self.rol_lbl)
+        u_lay.addSpacing(8)
 
-        rol_lbl = QLabel(f"🔑  {self.usuario_data['rol'].capitalize()}")
-        rol_lbl.setFont(QFont("Segoe UI", 10))
-        rol_lbl.setStyleSheet(f"color: {C_GRAY_400}; background: transparent;")
-        u_lay.addWidget(rol_lbl)
-
-        u_lay.addSpacing(6)
-
-        logout_btn = QPushButton("⏻   Cerrar Sesión")
-        logout_btn.setFixedHeight(36)
+        logout_btn = QPushButton("⏻")
+        logout_btn.setFixedSize(36, 36)
+        logout_btn.setToolTip("Cerrar Sesión")
         logout_btn.setCursor(Qt.PointingHandCursor)
         logout_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: transparent;
                 color: {C_ACCENT_RED};
                 border: 1px solid #3B1414;
-                border-radius: 8px;
-                font-size: 12px;
-                font-family: 'Segoe UI';
-                text-align: center;
+                border-radius: 18px;
+                font-size: 16px;
             }}
             QPushButton:hover {{
                 background-color: #3B1414;
             }}
         """)
         logout_btn.clicked.connect(self.cerrar_sesion)
-        u_lay.addWidget(logout_btn)
+        u_lay.addWidget(logout_btn, alignment=Qt.AlignCenter)
 
-        layout.addWidget(user_frame)
+        layout.addWidget(self.user_frame)
         sidebar.setLayout(layout)
+
+        # Eventos para expandir al pasar el mouse (si está colapsado)
+        sidebar.setMouseTracking(True)
+        sidebar.enterEvent = self.sidebar_enter_event
+        sidebar.leaveEvent = self.sidebar_leave_event
+
         return sidebar
+
+    def toggle_sidebar(self):
+        target_width = self.sidebar_width_collapsed if not self.sidebar_collapsed else self.sidebar_width_expanded
+        self.animate_sidebar(target_width)
+        self.sidebar_collapsed = not self.sidebar_collapsed
+        self.update_sidebar_ui(self.sidebar_collapsed)
+
+    def animate_sidebar(self, target_width):
+        if self.sidebar_animation and self.sidebar_animation.state() == QPropertyAnimation.Running:
+            self.sidebar_animation.stop()
+        self.sidebar_animation = QPropertyAnimation(self.sidebar, b"minimumWidth")
+        self.sidebar_animation.setDuration(200)
+        self.sidebar_animation.setStartValue(self.sidebar.width())
+        self.sidebar_animation.setEndValue(target_width)
+        self.sidebar_animation.setEasingCurve(QEasingCurve.InOutQuad)
+        self.sidebar_animation.start()
+
+    def update_sidebar_ui(self, collapsed):
+        # Mostrar/ocultar textos de los botones
+        for btn in self._sidebar_buttons.values():
+            if collapsed:
+                btn.setText(f"  {btn.original_icon}   ")
+                btn.setToolTip(btn.original_text)
+            else:
+                btn.setText(f"  {btn.original_icon}   {btn.original_text}")
+                btn.setToolTip("")
+        # Ajustar logo
+        if collapsed:
+            self.tec_lbl.hide()
+            self.shop_lbl.hide()
+            self.dot_lbl.setStyleSheet("font-size: 22px;")
+        else:
+            self.tec_lbl.show()
+            self.shop_lbl.show()
+            self.dot_lbl.setStyleSheet("")
+        # Ocultar separador y texto de usuario
+        self.sep_lbl.setVisible(not collapsed)
+        if collapsed:
+            self.avatar_lbl.setText("👤")
+            self.rol_lbl.hide()
+        else:
+            self.avatar_lbl.setText("👤  " + self.usuario_data['nombre'])
+            self.rol_lbl.show()
+
+    def sidebar_enter_event(self, event):
+        if self.sidebar_collapsed:
+            self.leave_timer.stop()
+            self.animate_sidebar(self.sidebar_width_expanded)
+            self.update_sidebar_ui(False)
+
+    def sidebar_leave_event(self, event):
+        if self.sidebar_collapsed:
+            self.leave_timer.start(500)  # espera medio segundo antes de colapsar
+
+    def collapse_sidebar(self):
+        if self.sidebar_collapsed:
+            self.animate_sidebar(self.sidebar_width_collapsed)
+            self.update_sidebar_ui(True)
 
     def _set_active_btn(self, nombre: str):
         for name, btn in self._sidebar_buttons.items():
@@ -429,7 +482,6 @@ class MainWindow(QMainWindow):
         widget = VentanaReportes(self.usuario_data)
         self.content_layout.addWidget(widget)
 
-    # ── Nueva vista para Usuarios (solo administrador) ─────────────────────────
     def show_usuarios(self):
         self.limpiar_contenido()
         hdr = self._page_header("🔐", "Usuarios", "Administrar cuentas del personal")

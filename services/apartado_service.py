@@ -98,7 +98,7 @@ class ApartadoService:
             params = (
                 data['id_cliente_fk'],
                 data['id_producto_fk'],
-                monto_final,  # total_producto = monto_final
+                monto_final,
                 data.get('fecha_inicio', date.today()),
                 'ACTIVO',
                 monto_original,
@@ -168,9 +168,18 @@ class ApartadoService:
                 return {'success': False, 'message': f'El monto excede el saldo pendiente (Q{saldo:.2f})'}
 
             numero_documento_completo = f"{tipo_documento}-{numero_documento}"
-            descripcion = f"Pago [{forma_pago}] apartado #{id_apartado} - {apartado['cliente_nombre']} - {numero_documento_completo}"
+            
+            # Mapear forma de pago para texto legible
+            forma_pago_texto = {
+                'EF': 'EFECTIVO',
+                'TC/TD': 'TARJETA',
+                'TF': 'TRANSFERENCIA',
+                'DP': 'DEPOSITO'
+            }.get(forma_pago, forma_pago)
+            
+            descripcion = f"Pago [{forma_pago_texto}] apartado #{id_apartado} - {apartado['cliente_nombre']} - {numero_documento_completo}"
 
-            # Crear movimiento de caja (igual que ventas, siempre 'INGRESO')
+            # Crear movimiento de caja (siempre 'INGRESO')
             resultado_mov = self.db.fetch_one(
                 """
                 INSERT INTO movimiento_caja
@@ -197,14 +206,14 @@ class ApartadoService:
                     (monto, id_apertura)
                 )
 
-            # Registrar detalle del pago
+            # Registrar detalle del pago (GUARDANDO LA FORMA DE PAGO)
             self.db.execute_query(
                 """
                 INSERT INTO detalle_apartado
-                (id_apartado_fk, id_movimiento_fk, fecha_pago, monto)
-                VALUES (%s, %s, CURRENT_DATE, %s)
+                (id_apartado_fk, id_movimiento_fk, fecha_pago, monto, forma_pago)
+                VALUES (%s, %s, CURRENT_DATE, %s, %s)
                 """,
-                (id_apartado, id_movimiento, monto)
+                (id_apartado, id_movimiento, monto, forma_pago)
             )
 
             # Verificar si se completó el apartado
@@ -344,6 +353,7 @@ class ApartadoService:
                 da.id_detalle,
                 da.fecha_pago,
                 da.monto,
+                da.forma_pago,
                 mc.tipo_movimiento,
                 mc.descripcion,
                 mc.fecha_hora,

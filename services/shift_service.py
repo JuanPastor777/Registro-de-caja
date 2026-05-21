@@ -89,7 +89,6 @@ class ShiftService:
             raise Exception("No se pudo crear/obtener la caja del día.")
         id_caja = caja['id_caja']
 
-        # Usar ahora_local() para la apertura
         query = """
             INSERT INTO apertura_cierre
                 (id_caja_fk, id_usuario_fk, fecha_hora_apertura,
@@ -100,7 +99,7 @@ class ShiftService:
         result = self.db.fetch_one(query, (
             id_caja,
             apertura.id_usuario_fk,
-            ahora_local(),        # 👈 cambiado
+            ahora_local(),
             apertura.monto_inicial,
             apertura.observacion
         ))
@@ -117,7 +116,7 @@ class ShiftService:
         return id_apertura
 
     # =========================================================
-    # CALCULAR RESUMEN DE CIERRE
+    # CALCULAR RESUMEN DE CIERRE (VERSIÓN CORREGIDA)
     # =========================================================
     def calcular_resumen_cierre(self, id_apertura: int) -> Dict:
         """
@@ -136,29 +135,65 @@ class ShiftService:
         desde = apertura['fecha_hora_apertura']
 
         # --------------------------------------------------
-        # VENTAS agrupadas por forma de pago
+        # Obtener todas las ventas del turno (incluyendo mixtas)
         # --------------------------------------------------
         query_ventas = """
-            SELECT
-                v.forma_pago,
-                COALESCE(SUM(v.total), 0) AS total
+            SELECT v.id_venta, v.forma_pago, v.total, v.producto_pagado
             FROM venta v
             JOIN movimiento_caja mc ON v.id_movimiento_fk = mc.id_movimiento
             WHERE mc.id_caja_fk = %s
               AND mc.fecha_hora >= %s
-              AND v.producto_pagado = true
-            GROUP BY v.forma_pago
         """
-        filas_ventas = self.db.fetch_all(query_ventas, (id_caja, desde))
-        ventas_por_forma = {f['forma_pago']: float(f['total']) for f in filas_ventas}
+        ventas = self.db.fetch_all(query_ventas, (id_caja, desde)) or []
 
-        ventas_efectivo     = ventas_por_forma.get('EFECTIVO', 0.0)
-        ventas_transferencia = ventas_por_forma.get('TRANSFERENCIA', 0.0)
-        ventas_tarjeta      = ventas_por_forma.get('TARJETA', 0.0)
-        ventas_deposito     = ventas_por_forma.get('DEPOSITO', 0.0)
+        # Obtener desgloses de todas las ventas mixtas
+        ids_mixtas = [v['id_venta'] for v in ventas if v['forma_pago'] == 'MIXTO' and v['producto_pagado']]
+        desgloses = {}
+        if ids_mixtas:
+            rows = self.db.fetch_all("""
+                SELECT id_venta_fk, forma_pago, monto
+                FROM detalle_pago_mixto
+                WHERE id_venta_fk = ANY(%s)
+            """, (ids_mixtas,))
+            for r in rows:
+                desgloses.setdefault(r['id_venta_fk'], []).append(r)
+
+        ventas_efectivo = 0.0
+        ventas_tarjeta = 0.0
+        ventas_transferencia = 0.0
+        ventas_deposito = 0.0
+
+        for v in ventas:
+            if not v['producto_pagado']:
+                continue  # las cuentas por cobrar no entran en efectivo
+            if v['forma_pago'] == 'MIXTO':
+                detalles = desgloses.get(v['id_venta'], [])
+                for d in detalles:
+                    fp = d['forma_pago']
+                    monto_parcial = float(d['monto'])
+                    if fp == 'EFECTIVO':
+                        ventas_efectivo += monto_parcial
+                    elif fp == 'TARJETA':
+                        ventas_tarjeta += monto_parcial
+                    elif fp == 'TRANSFERENCIA':
+                        ventas_transferencia += monto_parcial
+                    elif fp == 'DEPOSITO':
+                        ventas_deposito += monto_parcial
+            else:
+                monto_total = float(v['total'])
+                fp = v['forma_pago']
+                if fp == 'EF':
+                    ventas_efectivo += monto_total
+                elif fp == 'TC/TD':
+                    ventas_tarjeta += monto_total
+                elif fp == 'TF':
+                    ventas_transferencia += monto_total
+                elif fp == 'DP':
+                    ventas_deposito += monto_total
 
         # --------------------------------------------------
         # CUENTAS POR COBRAR cobradas en EFECTIVO durante el turno
+        # (movimientos tipo 'COBRO_CUENTA')
         # --------------------------------------------------
         query_cpc = """
             SELECT COALESCE(SUM(mc.monto), 0) AS total
@@ -198,7 +233,7 @@ class ShiftService:
 
         # --------------------------------------------------
         # EFECTIVO ESPERADO
-        # Solo: monto_inicial + ventas efectivo + cobros cuentas + ingresos manuales - egresos
+        # Solo: monto_inicial + ventas_efectivo + cobros_cuentas + ingresos_manuales - egresos
         # Transferencia, Tarjeta y Deposito NO afectan efectivo físico
         # --------------------------------------------------
         efectivo_esperado = (
@@ -239,7 +274,7 @@ class ShiftService:
                  AND estado = 'ABIERTO'
            """
         ok = self.db.execute_query(query, (
-            ahora_local(),  # 👈 cambiado
+            ahora_local(),
             cierre.monto_contado,
             cierre.monto_esperado,
             cierre.diferencia,
@@ -293,7 +328,7 @@ class ShiftService:
                 mc.tipo_movimiento,
                 mc.descripcion,
                 mc.monto,
-                u.nombre AS usuario
+                u.nombre AS usuario_nombre
             FROM movimiento_caja mc
             JOIN apertura_cierre ac ON mc.id_caja_fk = ac.id_caja_fk
             LEFT JOIN usuario u ON mc.id_usuario_fk = u.id_usuario

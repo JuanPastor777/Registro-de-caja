@@ -82,7 +82,7 @@ class ServiceVenta:
             pagos_mixtos: dict = None
     ) -> dict:
         """
-        Registra una venta completa con sus detalles y movimiento de caja.
+        Registra una venta completa con sus detalles y movimiento(s) de caja.
         - productos: lista de dict con id_producto, cantidad, precio_unitario, descuento,
                      aumento_porcentaje, aumento_monto
         - pagos_mixtos: dict con claves 'EF', 'TC/TD', 'TF', 'DP' y montos (solo para forma 'MIXTO')
@@ -119,61 +119,88 @@ class ServiceVenta:
 
             nombre_cliente = (f"{cliente.get('nombre', '')} {cliente.get('apellido', '')}").strip()
 
-            # Preparar movimiento de caja
-            tipo_movimiento = 'INGRESO' if producto_pagado else 'CUENTA_POR_COBRAR'
-            descripcion_movimiento = f"Venta {numero_documento} - {nombre_cliente}"
-            if forma_pago == 'MIXTO' and pagos_mixtos:
-                detalle_mixto = " | ".join(f"{k}:Q{v:.2f}" for k, v in pagos_mixtos.items() if v > 0)
-                descripcion_movimiento = f"Venta MIXTA {numero_documento} - {nombre_cliente} [{detalle_mixto}]"
+            # ================================================================
+            # 🔧 NUEVA LÓGICA PARA PAGOS MIXTOS
+            # ================================================================
+            ids_movimientos = []  # guardará {id_movimiento, forma_pago, monto}
+            id_movimiento_principal = None
 
-            # Crear movimiento principal
-            query_movimiento = """
-                INSERT INTO public.movimiento_caja
-                (id_caja_fk, tipo_movimiento, descripcion, monto, id_usuario_fk, fecha_hora)
-                VALUES (%s, %s, %s, %s, %s, NOW())
-                RETURNING id_movimiento
-            """
-            resultado_mov = self.db.fetch_one(query_movimiento, (
-                id_caja, tipo_movimiento, descripcion_movimiento, total, self.id_usuario_actual))
-            if not resultado_mov:
-                return {'success': False, 'message': 'Error al crear movimiento'}
-            id_movimiento = resultado_mov['id_movimiento']
-
-            # Si es pago mixto, registrar movimientos individuales por cada forma de pago (ingresos adicionales)
-            if forma_pago == 'MIXTO' and pagos_mixtos:
-                nombres_forma = {'EF': 'Efectivo', 'TC/TD': 'Tarjeta', 'TF': 'Transferencia', 'DP': 'Depósito'}
+            if forma_pago == 'MIXTO' and pagos_mixtos and producto_pagado:
+                # ✓ Pago mixto: crear un movimiento POR CADA forma de pago
+                #   NO se crea movimiento con el total (evita duplicación)
+                nombres_forma = {
+                    'EF': ('EFECTIVO', 'Efectivo'),
+                    'TC/TD': ('TARJETA', 'Tarjeta'),
+                    'TF': ('TRANSFERENCIA', 'Transferencia'),
+                    'DP': ('DEPOSITO', 'Depósito')
+                }
                 for fp_codigo, fp_monto in pagos_mixtos.items():
                     if fp_monto > 0:
-                        desc_fp = f"Pago mixto {nombres_forma.get(fp_codigo, fp_codigo)} - {numero_documento}"
-                        self.db.fetch_one("""
-                            INSERT INTO public.movimiento_caja
+                        fp_key, fp_nombre = nombres_forma.get(fp_codigo, (fp_codigo, fp_codigo))
+                        desc_mov = f"Venta MIXTA {numero_documento} - {nombre_cliente} [{fp_nombre}: Q{fp_monto:.2f}]"
+                        query_mov = """
+                            INSERT INTO movimiento_caja
                             (id_caja_fk, tipo_movimiento, descripcion, monto, id_usuario_fk, fecha_hora)
                             VALUES (%s, 'INGRESO', %s, %s, %s, NOW())
                             RETURNING id_movimiento
-                        """, (id_caja, desc_fp, fp_monto, self.id_usuario_actual))
+                        """
+                        res = self.db.fetch_one(query_mov, (id_caja, desc_mov, fp_monto, self.id_usuario_actual))
+                        if not res:
+                            return {'success': False, 'message': f'Error al crear movimiento para {fp_nombre}'}
+                        ids_movimientos.append({
+                            'id_movimiento': res['id_movimiento'],
+                            'forma_pago': fp_key,
+                            'monto': fp_monto
+                        })
+                if not ids_movimientos:
+                    return {'success': False, 'message': 'No se generó ningún movimiento para pago mixto'}
+                # El primer movimiento será el principal (asociado a la venta)
+                id_movimiento_principal = ids_movimientos[0]['id_movimiento']
 
-            # Crear venta
+            else:
+                # ✓ Pago normal (no mixto): un solo movimiento
+                tipo_movimiento = 'INGRESO' if producto_pagado else 'CUENTA_POR_COBRAR'
+                desc_mov = f"Venta {numero_documento} - {nombre_cliente}"
+                query_mov = """
+                    INSERT INTO movimiento_caja
+                    (id_caja_fk, tipo_movimiento, descripcion, monto, id_usuario_fk, fecha_hora)
+                    VALUES (%s, %s, %s, %s, %s, NOW())
+                    RETURNING id_movimiento
+                """
+                res = self.db.fetch_one(query_mov, (id_caja, tipo_movimiento, desc_mov, total, self.id_usuario_actual))
+                if not res:
+                    return {'success': False, 'message': 'Error al crear movimiento'}
+                id_movimiento_principal = res['id_movimiento']
+                ids_movimientos.append({
+                    'id_movimiento': id_movimiento_principal,
+                    'forma_pago': forma_pago,
+                    'monto': total
+                })
+
+            # ================================================================
+            # Crear la venta (apunta al movimiento principal)
+            # ================================================================
             query_venta = """
-                INSERT INTO public.venta
+                INSERT INTO venta
                 (id_movimiento_fk, id_cliente_fk, numero_documento, forma_pago, total,
                  es_envio, id_empresa_fk, numero_guia, producto_pagado)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id_venta
             """
-            resultado_venta = self.db.fetch_one(query_venta, (
-                id_movimiento, id_cliente, numero_documento, forma_pago, total,
+            res_venta = self.db.fetch_one(query_venta, (
+                id_movimiento_principal, id_cliente, numero_documento, forma_pago, total,
                 es_envio, id_empresa_fk, numero_guia, producto_pagado))
-            if not resultado_venta:
+            if not res_venta:
                 return {'success': False, 'message': 'Error al registrar venta'}
-            id_venta = resultado_venta['id_venta']
+            id_venta = res_venta['id_venta']
 
-            # Insertar detalles de venta (con soporte para aumentos/descuentos)
+            # Insertar detalles de venta
             for item in productos:
                 subtotal = (float(item['cantidad']) * float(item['precio_unitario'])) - float(item.get('descuento', 0))
                 aumento_porcentaje = item.get('aumento_porcentaje', 0)
                 aumento_monto = item.get('aumento_monto', 0)
                 query_detalle = """
-                    INSERT INTO public.detalle_venta
+                    INSERT INTO detalle_venta
                     (id_venta_fk, id_producto_fk, cantidad, precio_unitario, subtotal, descuento,
                      aumento_porcentaje, aumento_monto)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
@@ -183,23 +210,44 @@ class ServiceVenta:
                     item['precio_unitario'], subtotal, item.get('descuento', 0),
                     aumento_porcentaje, aumento_monto))
 
-            # Si no está pagado, crear cuenta por cobrar
+            # ================================================================
+            # Guardar desglose de pago mixto (si aplica)
+            # ================================================================
+            if forma_pago == 'MIXTO' and pagos_mixtos:
+                for fp_codigo, fp_monto in pagos_mixtos.items():
+                    if fp_monto > 0:
+                        nombre_forma = {
+                            'EF': 'EFECTIVO',
+                            'TC/TD': 'TARJETA',
+                            'TF': 'TRANSFERENCIA',
+                            'DP': 'DEPOSITO'
+                        }.get(fp_codigo, fp_codigo)
+                        self.db.execute_query("""
+                            INSERT INTO detalle_pago_mixto (id_venta_fk, forma_pago, monto)
+                            VALUES (%s, %s, %s)
+                        """, (id_venta, nombre_forma, fp_monto))
+
+            # ================================================================
+            # Cuenta por cobrar (si no está pagado)
+            # ================================================================
             if not producto_pagado:
                 query_cuenta = """
-                    INSERT INTO public.cuenta_por_cobrar
+                    INSERT INTO cuenta_por_cobrar
                     (id_movimiento_fk, numero_documento, monto, id_venta_fk, pagado)
                     VALUES (%s, %s, %s, %s, false)
                 """
-                self.db.execute_query(query_cuenta, (id_movimiento, numero_documento, total, id_venta))
+                self.db.execute_query(query_cuenta, (id_movimiento_principal, numero_documento, total, id_venta))
 
-            # Actualizar monto final en la apertura (solo si el producto fue pagado)
+            # ================================================================
+            # Actualizar monto_final en la apertura (suma de TODOS los movimientos)
+            # ================================================================
             if producto_pagado:
-                query_update_apertura = """
-                    UPDATE public.apertura_cierre
+                monto_total_movimientos = sum(m['monto'] for m in ids_movimientos)
+                self.db.execute_query("""
+                    UPDATE apertura_cierre
                     SET monto_final = COALESCE(monto_final, monto_inicial) + %s
                     WHERE id_apertura = %s
-                """
-                self.db.execute_query(query_update_apertura, (total, id_apertura))
+                """, (monto_total_movimientos, id_apertura))
 
             return {
                 'success': True,
@@ -263,6 +311,16 @@ class ServiceVenta:
                     if d.get(col):
                         d[col] = float(d[col])
             venta['productos'] = detalles
+
+            # Obtener desglose de pago mixto si aplica
+            if venta.get('forma_pago') == 'MIXTO':
+                query_mixto = """
+                    SELECT forma_pago, monto
+                    FROM detalle_pago_mixto
+                    WHERE id_venta_fk = %s
+                """
+                pagos_mixtos = self.db.fetch_all(query_mixto, (id_venta,))
+                venta['pagos_mixtos'] = pagos_mixtos or []
         return venta
 
     def listar_ventas_dia(self) -> list:
@@ -285,10 +343,52 @@ class ServiceVenta:
     def reporte_ventas_diario(self) -> dict:
         ventas = self.listar_ventas_dia()
         total_ventas = sum(float(v['total']) for v in ventas) if ventas else 0
-        ventas_efectivo = sum(float(v['total']) for v in ventas if v['forma_pago'] == 'EF')
-        ventas_tarjeta = sum(float(v['total']) for v in ventas if v['forma_pago'] == 'TC/TD')
-        ventas_transferencia = sum(float(v['total']) for v in ventas if v['forma_pago'] == 'TF')
+
+        # Obtener desgloses de todas las ventas mixtas de una sola vez (evita N+1)
+        ids_mixtas = [v['id_venta'] for v in ventas if v['forma_pago'] == 'MIXTO']
+        desgloses = {}
+        if ids_mixtas:
+            query = """
+                SELECT id_venta_fk, forma_pago, monto
+                FROM detalle_pago_mixto
+                WHERE id_venta_fk = ANY(%s)
+            """
+            rows = self.db.fetch_all(query, (ids_mixtas,))
+            for row in rows:
+                desgloses.setdefault(row['id_venta_fk'], []).append(row)
+
+        ventas_efectivo = 0.0
+        ventas_tarjeta = 0.0
+        ventas_transferencia = 0.0
+        ventas_deposito = 0.0
+
+        for v in ventas:
+            monto_total = float(v['total'])
+            if v['forma_pago'] == 'MIXTO':
+                detalles = desgloses.get(v['id_venta'], [])
+                for d in detalles:
+                    fp = d['forma_pago']
+                    monto_parcial = float(d['monto'])
+                    if fp == 'EFECTIVO':
+                        ventas_efectivo += monto_parcial
+                    elif fp == 'TARJETA':
+                        ventas_tarjeta += monto_parcial
+                    elif fp == 'TRANSFERENCIA':
+                        ventas_transferencia += monto_parcial
+                    elif fp == 'DEPOSITO':
+                        ventas_deposito += monto_parcial
+            else:
+                if v['forma_pago'] == 'EF':
+                    ventas_efectivo += monto_total
+                elif v['forma_pago'] == 'TC/TD':
+                    ventas_tarjeta += monto_total
+                elif v['forma_pago'] == 'TF':
+                    ventas_transferencia += monto_total
+                elif v['forma_pago'] == 'DP':
+                    ventas_deposito += monto_total
+
         ventas_envio = sum(float(v['total']) for v in ventas if v['es_envio'])
+
         return {
             'fecha': date.today(),
             'total_ventas': total_ventas,
@@ -297,6 +397,7 @@ class ServiceVenta:
                 'efectivo': ventas_efectivo,
                 'tarjeta': ventas_tarjeta,
                 'transferencia': ventas_transferencia,
+                'deposito': ventas_deposito,
                 'envio': ventas_envio
             },
             'ventas': ventas

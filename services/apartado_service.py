@@ -133,91 +133,80 @@ class ApartadoService:
     # REGISTRAR PAGO/ABONO
     # =========================================================
     
-    def registrar_pago(self, id_apartado: int, monto: float, forma_pago: str, 
+    def registrar_pago(self, id_apartado: int, monto: float, forma_pago: str,
                        tipo_documento: str, numero_documento: str,
-                       pagos_mixtos: dict = None) -> dict:
+                       pagos_mixtos: dict = None, id_caja: int = None) -> dict:
         """
-        Registra un pago/abono para un apartado (similar a venta)
+        Registra un pago/abono para un apartado.
+
+        - Efectivo (EF): crea movimiento_caja INGRESO y suma al monto_final de apertura.
+        - Transferencia/Depósito/Tarjeta: crea movimiento_caja INGRESO (para trazabilidad)
+          pero NO suma al monto_final de apertura (no es dinero físico en caja).
         """
         try:
-            # Verificar caja
+            # Verificar caja abierta (necesaria para todas las formas de pago)
             caja_verificada = self.verificar_caja_abierta()
             if not caja_verificada['success']:
                 return caja_verificada
-            
-            id_caja = caja_verificada['id_caja']
+
+            id_caja_mov = caja_verificada['id_caja']
             id_apertura = caja_verificada['id_apertura']
-            
+
             # Obtener apartado
             apartado = self.obtener_detalle_apartado(id_apartado)
             if not apartado:
                 return {'success': False, 'message': 'Apartado no encontrado'}
-            
+
             if apartado['estado'] != 'ACTIVO':
                 return {'success': False, 'message': f'Apartado está {apartado["estado"]}'}
-            
-            # Obtener total pagado hasta ahora
+
+            # Verificar saldo
             total_pagado = self.obtener_total_pagado(id_apartado)
             saldo = float(apartado['monto_final']) - total_pagado
-            
+
             if monto > saldo:
                 return {'success': False, 'message': f'El monto excede el saldo pendiente (Q{saldo:.2f})'}
-            
-            # Crear movimiento de caja
+
             numero_documento_completo = f"{tipo_documento}-{numero_documento}"
-            if forma_pago == 'MIXTO' and pagos_mixtos:
-                detalle_mixto = " | ".join(f"{k}:Q{v:.2f}" for k, v in pagos_mixtos.items() if v > 0)
-                descripcion = f"Pago MIXTO apartado #{id_apartado} - {apartado['cliente_nombre']} - {numero_documento_completo} [{detalle_mixto}]"
-            else:
-                descripcion = f"Pago apartado #{id_apartado} - {apartado['cliente_nombre']} - {numero_documento_completo}"
-            
-            query_movimiento = """
+            descripcion = f"Pago [{forma_pago}] apartado #{id_apartado} - {apartado['cliente_nombre']} - {numero_documento_completo}"
+
+            # Crear movimiento de caja (igual que ventas, siempre 'INGRESO')
+            resultado_mov = self.db.fetch_one(
+                """
                 INSERT INTO movimiento_caja
                 (id_caja_fk, tipo_movimiento, descripcion, monto, id_usuario_fk, fecha_hora)
                 VALUES (%s, 'INGRESO', %s, %s, %s, NOW())
                 RETURNING id_movimiento
-            """
-            
-            resultado_mov = self.db.fetch_one(
-                query_movimiento,
-                (id_caja, descripcion, monto, self.id_usuario_actual)
+                """,
+                (id_caja_mov, descripcion, monto, self.id_usuario_actual)
             )
-            
+
             if not resultado_mov:
-                return {'success': False, 'message': 'Error al crear movimiento'}
-            
+                return {'success': False, 'message': 'Error al crear movimiento en caja'}
+
             id_movimiento = resultado_mov['id_movimiento']
 
-            # Si es pago mixto, crear movimientos individuales por forma de pago
-            if forma_pago == 'MIXTO' and pagos_mixtos:
-                nombres_forma = {'EF': 'Efectivo', 'TC/TD': 'Tarjeta', 'TF': 'Transferencia', 'DP': 'Depósito'}
-                for fp_codigo, fp_monto in pagos_mixtos.items():
-                    if fp_monto > 0:
-                        desc_fp = f"Pago mixto {nombres_forma.get(fp_codigo, fp_codigo)} - apartado #{id_apartado}"
-                        self.db.fetch_one("""
-                            INSERT INTO movimiento_caja
-                            (id_caja_fk, tipo_movimiento, descripcion, monto, id_usuario_fk, fecha_hora)
-                            VALUES (%s, 'INGRESO', %s, %s, %s, NOW())
-                            RETURNING id_movimiento
-                        """, (id_caja, desc_fp, fp_monto, self.id_usuario_actual))
-            
+            # Solo efectivo suma al conteo físico de la apertura
+            if forma_pago == 'EF':
+                self.db.execute_query(
+                    """
+                    UPDATE apertura_cierre
+                    SET monto_final = COALESCE(monto_final, monto_inicial) + %s
+                    WHERE id_apertura = %s
+                    """,
+                    (monto, id_apertura)
+                )
+
             # Registrar detalle del pago
-            query_detalle = """
+            self.db.execute_query(
+                """
                 INSERT INTO detalle_apartado
                 (id_apartado_fk, id_movimiento_fk, fecha_pago, monto)
                 VALUES (%s, %s, CURRENT_DATE, %s)
-            """
-            
-            self.db.execute_query(query_detalle, (id_apartado, id_movimiento, monto))
-            
-            # Actualizar apertura
-            query_update = """
-                UPDATE apertura_cierre
-                SET monto_final = COALESCE(monto_final, monto_inicial) + %s
-                WHERE id_apertura = %s
-            """
-            self.db.execute_query(query_update, (monto, id_apertura))
-            
+                """,
+                (id_apartado, id_movimiento, monto)
+            )
+
             # Verificar si se completó el apartado
             nuevo_total_pagado = total_pagado + monto
             if nuevo_total_pagado >= float(apartado['monto_final']):
@@ -225,10 +214,11 @@ class ApartadoService:
                     "UPDATE apartado SET estado = 'COMPLETADO' WHERE id_apartado = %s",
                     (id_apartado,)
                 )
-                mensaje = "Apartado completado exitosamente"
+                mensaje = "✅ Apartado completado exitosamente"
             else:
-                mensaje = f"Pago registrado. Saldo restante: Q{float(apartado['monto_final']) - nuevo_total_pagado:.2f}"
-            
+                saldo_restante = float(apartado['monto_final']) - nuevo_total_pagado
+                mensaje = f"💰 Pago registrado. Saldo restante: Q{saldo_restante:.2f}"
+
             return {
                 'success': True,
                 'message': mensaje,
@@ -236,7 +226,7 @@ class ApartadoService:
                 'monto_pagado': monto,
                 'saldo_restante': float(apartado['monto_final']) - nuevo_total_pagado
             }
-            
+
         except Exception as e:
             return {'success': False, 'message': f'Error: {str(e)}'}
     

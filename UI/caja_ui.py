@@ -297,19 +297,24 @@ class VentanaCaja(QWidget):
         mixtos = self.db.fetch_one(query_mixtos, (id_caja, desde)) or {}
         efectivo_mix = float(mixtos.get('efectivo', 0))
 
+        # Pagos de apartados en efectivo
+        pagos_apartados = self.obtener_pagos_apartados_turno(id_caja, desde)
+        efectivo_apartados = pagos_apartados['efectivo']
+
         query_otros = """
             SELECT 
                 COALESCE(SUM(mc.monto) FILTER (WHERE mc.tipo_movimiento = 'EGRESO'), 0) AS egresos,
-                COALESCE(SUM(mc.monto) FILTER (WHERE mc.tipo_movimiento = 'INGRESO' AND v.id_venta IS NULL), 0) AS otros_ingresos
+                COALESCE(SUM(mc.monto) FILTER (WHERE mc.tipo_movimiento = 'INGRESO' AND v.id_venta IS NULL AND da.id_detalle IS NULL), 0) AS otros_ingresos
             FROM movimiento_caja mc
             LEFT JOIN venta v ON mc.id_movimiento = v.id_movimiento_fk
+            LEFT JOIN detalle_apartado da ON mc.id_movimiento = da.id_movimiento_fk
             WHERE mc.id_caja_fk = %s AND mc.fecha_hora >= %s
         """
         otros = self.db.fetch_one(query_otros, (id_caja, desde)) or {}
         egresos = float(otros.get('egresos', 0))
         otros_ingresos = float(otros.get('otros_ingresos', 0))
 
-        ventas_efectivo = efectivo_norm + efectivo_mix
+        ventas_efectivo = efectivo_norm + efectivo_mix + efectivo_apartados
         monto_esperado = self.monto_inicial_actual + ventas_efectivo + otros_ingresos - egresos
         diferencia = monto_contado - monto_esperado
 
@@ -563,6 +568,45 @@ class VentanaCaja(QWidget):
         layout.addWidget(splitter)
         return tab
 
+    def obtener_pagos_apartados_turno(self, id_caja: int, desde) -> dict:
+        """Obtiene los pagos de apartados realizados en el turno, desglosados por forma de pago"""
+        query = """
+            SELECT 
+                mc.monto,
+                da.forma_pago
+            FROM movimiento_caja mc
+            JOIN detalle_apartado da ON mc.id_movimiento = da.id_movimiento_fk
+            WHERE mc.id_caja_fk = %s AND mc.fecha_hora >= %s
+              AND mc.tipo_movimiento = 'INGRESO'
+        """
+        pagos = self.db.fetch_all(query, (id_caja, desde)) or []
+        
+        efectivo = 0.0
+        tarjeta = 0.0
+        transferencia = 0.0
+        deposito = 0.0
+        
+        for p in pagos:
+            monto = float(p['monto'])
+            forma = p.get('forma_pago') or ''
+            
+            if forma == 'EF':
+                efectivo += monto
+            elif forma == 'TC/TD':
+                tarjeta += monto
+            elif forma == 'TF':
+                transferencia += monto
+            elif forma == 'DP':
+                deposito += monto
+        
+        return {
+            'efectivo': efectivo,
+            'tarjeta': tarjeta,
+            'transferencia': transferencia,
+            'deposito': deposito,
+            'total': efectivo + tarjeta + transferencia + deposito
+        }
+
     def toggle_gasto_field(self, tipo):
         visible = (tipo == "EGRESO")
         self.tipo_gasto.setVisible(visible)
@@ -754,12 +798,14 @@ class VentanaCaja(QWidget):
                           AND dpm.monto = mc.monto
                         LIMIT 1
                     )
+                    WHEN da.id_detalle IS NOT NULL THEN da.forma_pago
                     ELSE NULL
                 END AS forma_pago_detalle
             FROM movimiento_caja mc
             JOIN apertura_cierre ac ON mc.id_caja_fk = ac.id_caja_fk
             LEFT JOIN usuario u ON mc.id_usuario_fk = u.id_usuario
             LEFT JOIN venta v ON mc.id_movimiento = v.id_movimiento_fk
+            LEFT JOIN detalle_apartado da ON mc.id_movimiento = da.id_movimiento_fk
             WHERE ac.id_apertura = %s
               AND mc.fecha_hora >= ac.fecha_hora_apertura
               AND (ac.fecha_hora_cierre IS NULL OR mc.fecha_hora <= ac.fecha_hora_cierre)
@@ -803,6 +849,7 @@ class VentanaCaja(QWidget):
         id_caja = apertura['id_caja_fk']
         desde = apertura['fecha_hora_apertura']
 
+        # 1. Ventas normales (no mixtas)
         query_normales = """
             SELECT 
                 COALESCE(SUM(v.total) FILTER (WHERE v.forma_pago = 'EF' AND v.producto_pagado = TRUE), 0) AS efectivo,
@@ -822,6 +869,7 @@ class VentanaCaja(QWidget):
         deposito = float(normales.get('deposito', 0))
         cuentas_cobrar = float(normales.get('cuentas_cobrar', 0))
 
+        # 2. Ventas mixtas (desglose desde detalle_pago_mixto)
         query_mixtos = """
             SELECT 
                 COALESCE(SUM(dpm.monto) FILTER (WHERE dpm.forma_pago = 'EFECTIVO'), 0) AS efectivo,
@@ -840,12 +888,21 @@ class VentanaCaja(QWidget):
         transferencia += float(mixtos.get('transferencia', 0))
         deposito += float(mixtos.get('deposito', 0))
 
+        # 3. PAGOS DE APARTADOS
+        pagos_apartados = self.obtener_pagos_apartados_turno(id_caja, desde)
+        efectivo += pagos_apartados['efectivo']
+        tarjeta += pagos_apartados['tarjeta']
+        transferencia += pagos_apartados['transferencia']
+        deposito += pagos_apartados['deposito']
+
+        # 4. Otros ingresos y egresos
         query_otros = """
             SELECT 
                 COALESCE(SUM(mc.monto) FILTER (WHERE mc.tipo_movimiento = 'EGRESO'), 0) AS egresos,
-                COALESCE(SUM(mc.monto) FILTER (WHERE mc.tipo_movimiento = 'INGRESO' AND v.id_venta IS NULL), 0) AS otros_ingresos
+                COALESCE(SUM(mc.monto) FILTER (WHERE mc.tipo_movimiento = 'INGRESO' AND v.id_venta IS NULL AND da.id_detalle IS NULL), 0) AS otros_ingresos
             FROM movimiento_caja mc
             LEFT JOIN venta v ON mc.id_movimiento = v.id_movimiento_fk
+            LEFT JOIN detalle_apartado da ON mc.id_movimiento = da.id_movimiento_fk
             WHERE mc.id_caja_fk = %s AND mc.fecha_hora >= %s
         """
         otros = self.db.fetch_one(query_otros, (id_caja, desde)) or {}

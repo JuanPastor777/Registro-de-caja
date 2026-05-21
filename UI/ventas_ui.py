@@ -1,4 +1,5 @@
 # UI/ventas_ui.py
+
 import sys
 import os
 
@@ -16,7 +17,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.conexion import DatabaseConnection
 from services.venta_service import ServiceVenta
 
-# ========== ESTILOS (originales) ==========
+# ========== ESTILOS ==========
 ESTILO_GLOBAL = """
     QWidget { font-family: 'Segoe UI'; font-size: 14px; background-color: #F8FAFC; color: #1E293B; }
     QGroupBox { font-weight: bold; border: 1.5px solid #E2E8F0; border-radius: 12px; margin-top: 12px; padding-top: 12px; background: white; }
@@ -33,165 +34,7 @@ BTN_DANGER = "QPushButton { background: #FEE2E2; color: #DC2626; border-radius: 
 BTN_OUTLINE = "QPushButton { background: white; color: #6366F1; border: 1.5px solid #6366F1; border-radius: 8px; padding: 8px 16px; } QPushButton:hover { background: #EEF2FF; }"
 BTN_SECONDARY = "QPushButton { background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; border-radius: 8px; padding: 8px 16px; } QPushButton:hover { background: #E2E8F0; }"
 
-# ========== DIÁLOGO MODIFICAR PRECIO (nuevo, mejorado) ==========
-class DialogoModificarPrecio(QDialog):
-    def __init__(self, precio_original, parent=None):
-        super().__init__(parent)
-        self.precio_original = precio_original
-        self.precio_final = precio_original
-        self.init_ui()
-        self.calcular()
-
-    def init_ui(self):
-        self.setWindowTitle("Modificar precio para esta venta")
-        self.setFixedSize(550, 380)
-        self.setStyleSheet(ESTILO_GLOBAL)
-        layout = QVBoxLayout()
-        layout.setSpacing(20)
-        layout.setContentsMargins(28, 28, 28, 28)
-
-        titulo = QLabel("✏️ Ajustar precio del producto")
-        titulo.setFont(QFont("Segoe UI", 15, QFont.Bold))
-        layout.addWidget(titulo)
-
-        info = QLabel(f"Precio original: Q {self.precio_original:.2f}")
-        info.setStyleSheet("color:#64748B; font-weight:600;")
-        layout.addWidget(info)
-
-        # Tipo de modificación
-        tipo_row = QHBoxLayout()
-        self.radio_aumento = QRadioButton("Aumento")
-        self.radio_descuento = QRadioButton("Descuento")
-        self.radio_aumento.setChecked(True)
-        grupo = QButtonGroup()
-        grupo.addButton(self.radio_aumento)
-        grupo.addButton(self.radio_descuento)
-        tipo_row.addWidget(self.radio_aumento)
-        tipo_row.addWidget(self.radio_descuento)
-        tipo_row.addStretch()
-        layout.addLayout(tipo_row)
-
-        # Valor y tipo (monto/porcentaje)
-        valor_layout = QHBoxLayout()
-        self.combo_tipo = QComboBox()
-        self.combo_tipo.addItems(["Monto fijo (Q)", "Porcentaje (%)"])
-        self.combo_tipo.currentTextChanged.connect(self.calcular)
-        self.spin_valor = QDoubleSpinBox()
-        self.spin_valor.setMinimum(0)
-        self.spin_valor.setMaximum(10000000)
-        self.spin_valor.setPrefix("")
-        self.spin_valor.setSuffix("")
-        self.spin_valor.valueChanged.connect(self.calcular)
-        self.spin_valor.setFixedWidth(180)
-        valor_layout.addWidget(QLabel("Ajuste:"))
-        valor_layout.addWidget(self.combo_tipo)
-        valor_layout.addWidget(self.spin_valor)
-        valor_layout.addStretch()
-        layout.addLayout(valor_layout)
-
-        self.lbl_resultado = QLabel("Precio final: Q 0.00")
-        self.lbl_resultado.setStyleSheet("font-size: 18px; font-weight: bold; color: #10B981; padding: 10px; background: #ECFDF5; border-radius: 12px;")
-        layout.addWidget(self.lbl_resultado)
-
-        botones = QHBoxLayout()
-        btn_cancelar = QPushButton("Cancelar")
-        btn_cancelar.clicked.connect(self.reject)
-        btn_ok = QPushButton("Aplicar")
-        btn_ok.setStyleSheet(BTN_PRIMARY)
-        btn_ok.clicked.connect(self.accept)
-        botones.addWidget(btn_cancelar)
-        botones.addWidget(btn_ok)
-        layout.addLayout(botones)
-
-        self.setLayout(layout)
-
-    def calcular(self):
-        valor = self.spin_valor.value()
-        es_porcentaje = "Porcentaje" in self.combo_tipo.currentText()
-        modificacion = valor if self.radio_aumento.isChecked() else -valor
-        if es_porcentaje:
-            ajuste = self.precio_original * (modificacion / 100)
-        else:
-            ajuste = modificacion
-        self.precio_final = max(self.precio_original + ajuste, 0.01)
-        self.lbl_resultado.setText(f"Precio final: Q {self.precio_final:.2f}")
-
-    def obtener_precio_final(self):
-        return self.precio_final
-
-# ========== DIÁLOGO NUEVO PRODUCTO (corregido el rango del precio) ==========
-class DialogoNuevoProducto(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.db = DatabaseConnection()
-        self.producto_creado = None
-        self.init_ui()
-
-    def init_ui(self):
-        self.setWindowTitle("Nuevo Producto")
-        self.setFixedWidth(500)
-        self.setStyleSheet(ESTILO_GLOBAL)
-        layout = QVBoxLayout()
-        layout.setSpacing(16)
-        layout.setContentsMargins(24, 24, 24, 24)
-
-        titulo = QLabel("Agregar Nuevo Producto")
-        titulo.setFont(QFont("Segoe UI", 15, QFont.Bold))
-        layout.addWidget(titulo)
-
-        form = QFormLayout()
-        self.input_nombre = QLineEdit()
-        self.input_marca = QLineEdit()
-        self.input_modelo = QLineEdit()
-        self.input_descripcion = QLineEdit()
-        self.input_precio = QDoubleSpinBox()
-        self.input_precio.setMinimum(0)
-        self.input_precio.setMaximum(10000000)
-        self.input_precio.setPrefix("Q ")
-        self.input_precio.setValue(0)
-        form.addRow("Nombre *", self.input_nombre)
-        form.addRow("Marca", self.input_marca)
-        form.addRow("Modelo", self.input_modelo)
-        form.addRow("Descripción", self.input_descripcion)
-        form.addRow("Precio *", self.input_precio)
-        layout.addLayout(form)
-
-        botones = QHBoxLayout()
-        btn_cancelar = QPushButton("Cancelar")
-        btn_cancelar.clicked.connect(self.reject)
-        btn_guardar = QPushButton("Guardar Producto")
-        btn_guardar.setStyleSheet(BTN_PRIMARY)
-        btn_guardar.clicked.connect(self.guardar)
-        botones.addWidget(btn_cancelar)
-        botones.addWidget(btn_guardar)
-        layout.addLayout(botones)
-        self.setLayout(layout)
-
-    def guardar(self):
-        nombre = self.input_nombre.text().strip()
-        precio = self.input_precio.value()
-        if not nombre or precio <= 0:
-            QMessageBox.warning(self, "Error", "Nombre y precio válido")
-            return
-        marca = self.input_marca.text().strip() or None
-        modelo = self.input_modelo.text().strip() or None
-        desc = self.input_descripcion.text().strip() or None
-        query = "INSERT INTO public.producto (nombre, marca, modelo, descripcion, precio_costo) VALUES (%s,%s,%s,%s,%s) RETURNING id_producto"
-        resultado = self.db.fetch_one(query, (nombre, marca, modelo, desc, precio))
-        if resultado:
-            self.producto_creado = {
-                'id_producto': resultado['id_producto'],
-                'nombre': nombre,
-                'marca': marca,
-                'modelo': modelo,
-                'descripcion': desc,
-                'precio_costo': precio
-            }
-            self.accept()
-        else:
-            QMessageBox.warning(self, "Error", "No se pudo guardar")
-
-# ========== RESTO DE DIÁLOGOS (sin cambios) ==========
+# ========== DIÁLOGOS ==========
 class DialogoNuevoCliente(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -250,6 +93,78 @@ class DialogoNuevoCliente(QDialog):
             self.accept()
         else:
             QMessageBox.warning(self, "Error", "No se pudo guardar")
+
+
+class DialogoNuevoProducto(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.db = DatabaseConnection()
+        self.producto_creado = None
+        self.init_ui()
+
+    def init_ui(self):
+        self.setWindowTitle("Nuevo Producto")
+        self.setFixedWidth(460)
+        self.setStyleSheet(ESTILO_GLOBAL)
+        layout = QVBoxLayout()
+        layout.setSpacing(16)
+        layout.setContentsMargins(24, 24, 24, 24)
+
+        titulo = QLabel("Agregar Nuevo Producto")
+        titulo.setFont(QFont("Segoe UI", 15, QFont.Bold))
+        layout.addWidget(titulo)
+
+        form = QFormLayout()
+        self.input_nombre = QLineEdit()
+        self.input_marca = QLineEdit()
+        self.input_modelo = QLineEdit()
+        self.input_descripcion = QLineEdit()
+        self.input_precio = QDoubleSpinBox()
+        self.input_precio.setMinimum(0)
+        self.input_precio.setPrefix("Q ")
+        self.input_precio.setValue(0)
+        form.addRow("Nombre *", self.input_nombre)
+        form.addRow("Marca", self.input_marca)
+        form.addRow("Modelo", self.input_modelo)
+        form.addRow("Descripción", self.input_descripcion)
+        form.addRow("Precio *", self.input_precio)
+        layout.addLayout(form)
+
+        botones = QHBoxLayout()
+        btn_cancelar = QPushButton("Cancelar")
+        btn_cancelar.clicked.connect(self.reject)
+        btn_guardar = QPushButton("Guardar Producto")
+        btn_guardar.setStyleSheet(BTN_PRIMARY)
+        btn_guardar.clicked.connect(self.guardar)
+        botones.addWidget(btn_cancelar)
+        botones.addWidget(btn_guardar)
+        layout.addLayout(botones)
+        self.setLayout(layout)
+
+    def guardar(self):
+        nombre = self.input_nombre.text().strip()
+        precio = self.input_precio.value()
+        if not nombre or precio <= 0:
+            QMessageBox.warning(self, "Error", "Nombre y precio válido")
+            return
+        marca = self.input_marca.text().strip() or None
+        modelo = self.input_modelo.text().strip() or None
+        desc = self.input_descripcion.text().strip() or None
+        query = "INSERT INTO public.producto (nombre, marca, modelo, descripcion, precio_costo) VALUES (%s,%s,%s,%s,%s) RETURNING id_producto"
+        resultado = self.db.fetch_one(query, (nombre, marca, modelo, desc, precio))
+        if resultado:
+            self.producto_creado = {
+                'id_producto': resultado['id_producto'],
+                'nombre': nombre,
+                'marca': marca,
+                'modelo': modelo,
+                'descripcion': desc,
+                'precio_costo': precio
+            }
+            self.accept()
+        else:
+            QMessageBox.warning(self, "Error", "No se pudo guardar")
+
 
 class DialogoPagoMixto(QDialog):
     def __init__(self, total, parent=None):
@@ -334,6 +249,7 @@ class DialogoPagoMixto(QDialog):
             'DP': self.spin_deposito.value(),
         }
         self.accept()
+
 
 class DialogoSeleccionCliente(QDialog):
     def __init__(self, parent=None):
@@ -420,7 +336,8 @@ class DialogoSeleccionCliente(QDialog):
         self.cliente_seleccionado = next((c for c in self.clientes_data if c['id_cliente'] == cid), None)
         self.accept()
 
-# ========== VENTANA PRINCIPAL (estructura original, solo se añade botón para diálogo) ==========
+
+# ========== VENTANA PRINCIPAL ==========
 class VentanasVentas(QWidget):
     def __init__(self, usuario_data=None, id_caja_actual=None):
         super().__init__()
@@ -540,13 +457,60 @@ class VentanasVentas(QWidget):
         self.lbl_precio_original.setStyleSheet("color:#64748B;font-size:12px; margin-top: 5px;")
         ly.addWidget(self.lbl_precio_original)
 
-        # Botón para modificar precio (abre diálogo) - REEMPLAZA EL CHECKBOX Y FRAME
-        btn_precio_especial = QPushButton("Modificaciones")
-        btn_precio_especial.setStyleSheet(BTN_SECONDARY)
-        btn_precio_especial.clicked.connect(self.modificar_precio_dialog)
-        ly.addWidget(btn_precio_especial)
+        # Panel de modificación de precio (compacto)
+        self.mod_frame = QFrame()
+        self.mod_frame.setStyleSheet("border:1px solid #E2E8F0; border-radius:8px; padding:6px; background:#F9FAFB; margin-top: 5px;")
+        mod_ly = QVBoxLayout(self.mod_frame)
+        mod_ly.setSpacing(6)
 
-        # Cantidad
+        self.chk_modificar = QCheckBox("Modificar precio para esta venta")
+        self.chk_modificar.setStyleSheet("font-weight:600")
+        self.chk_modificar.toggled.connect(self.toggle_modificacion)
+        mod_ly.addWidget(self.chk_modificar)
+
+        self.mod_widgets = QWidget()
+        mw_ly = QVBoxLayout(self.mod_widgets)
+        mw_ly.setSpacing(6)
+        self.mod_widgets.setVisible(False)
+
+        # Tipo de modificación (aumento/descuento)
+        tipo_row = QHBoxLayout()
+        self.radio_aumento = QRadioButton("Aumento")
+        self.radio_descuento = QRadioButton("Descuento")
+        self.radio_aumento.setChecked(True)
+        self.btn_group_mod = QButtonGroup()
+        self.btn_group_mod.addButton(self.radio_aumento)
+        self.btn_group_mod.addButton(self.radio_descuento)
+        tipo_row.addWidget(self.radio_aumento)
+        tipo_row.addWidget(self.radio_descuento)
+        tipo_row.addStretch()
+        mw_ly.addLayout(tipo_row)
+
+        # Valor y tipo (monto/porcentaje)
+        valor_row = QHBoxLayout()
+        self.combo_tipo_valor = QComboBox()
+        self.combo_tipo_valor.addItems(["Monto fijo (Q)", "Porcentaje (%)"])
+        self.spin_valor = QDoubleSpinBox()
+        self.spin_valor.setMinimum(0)
+        self.spin_valor.setMaximum(9999999)
+        self.spin_valor.setPrefix("Q ")
+        self.combo_tipo_valor.currentTextChanged.connect(
+            lambda t: self.spin_valor.setPrefix("Q " if "Monto" in t else "%")
+        )
+        self.spin_valor.valueChanged.connect(self.calcular_precio_modificado)
+        valor_row.addWidget(self.combo_tipo_valor)
+        valor_row.addWidget(self.spin_valor)
+        mw_ly.addLayout(valor_row)
+
+        # Precio final
+        self.lbl_precio_final = QLabel("Precio final: Q 0.00")
+        self.lbl_precio_final.setStyleSheet("font-weight:700;color:#10B981;font-size:13px")
+        mw_ly.addWidget(self.lbl_precio_final)
+
+        mod_ly.addWidget(self.mod_widgets)
+        ly.addWidget(self.mod_frame)
+
+        # Cantidad (sin descuento adicional)
         cant_layout = QHBoxLayout()
         cant_layout.addWidget(QLabel("Cantidad:"))
         self.spin_cantidad = QSpinBox()
@@ -570,62 +534,85 @@ class VentanasVentas(QWidget):
         box.setLayout(ly)
         return box
 
-    def modificar_precio_dialog(self):
-        if self.precio_original <= 0:
-            QMessageBox.warning(self, "Sin producto", "Seleccione un producto primero")
-            return
-        dlg = DialogoModificarPrecio(self.precio_original, self)
-        if dlg.exec_():
-            self.precio_final = dlg.obtener_precio_final()
-            self.lbl_precio_original.setText(f"Precio original: Q {self.precio_original:.2f} → ✨ Precio especial: Q {self.precio_final:.2f}")
-            self.lbl_precio_original.setStyleSheet("color:#10B981; font-size:12px; font-weight: bold;")
-            self.actualizar_preview()
+    def toggle_modificacion(self, checked):
+        self.mod_widgets.setVisible(checked)
+        if not checked:
+            self.calcular_precio_modificado()
 
     def producto_seleccionado(self):
         p = self.combo_productos.currentData()
         if p:
             self.precio_original = float(p.get('precio_costo', 0))
-            self.precio_final = self.precio_original
             self.lbl_precio_original.setText(f"Precio original: Q {self.precio_original:.2f}")
-            self.lbl_precio_original.setStyleSheet("color:#64748B;font-size:12px;")
-            self.actualizar_preview()
+            self.calcular_precio_modificado()
         else:
             self.precio_original = 0
 
+    def calcular_precio_modificado(self):
+        if not self.chk_modificar.isChecked() or self.precio_original == 0:
+            self.precio_final = self.precio_original
+            self.lbl_precio_final.setText(f"Precio final: Q {self.precio_original:.2f}")
+            self.actualizar_preview()
+            return
+
+        valor = self.spin_valor.value()
+        es_porcentaje = "Porcentaje" in self.combo_tipo_valor.currentText()
+        modificacion = valor if self.radio_aumento.isChecked() else -valor
+        if es_porcentaje:
+            ajuste = self.precio_original * (modificacion / 100)
+        else:
+            ajuste = modificacion
+        self.precio_final = max(self.precio_original + ajuste, 0)
+        self.lbl_precio_final.setText(f"Precio final: Q {self.precio_final:.2f}")
+        self.actualizar_preview()
+
     def actualizar_preview(self):
         subtotal = self.spin_cantidad.value() * self.precio_final
-        self.lbl_preview.setText(f"Subtotal: Q {subtotal:.2f}")
+        self.lbl_preview.setText(f"Subtotal: Q {max(subtotal, 0):.2f}")
 
     def agregar_producto(self):
         p = self.combo_productos.currentData()
         if not p:
             QMessageBox.warning(self, "Error", "Seleccione producto")
             return
-        if self.precio_final <= 0:
+        final_price = self.precio_final if hasattr(self, 'precio_final') else float(p.get('precio_costo', 0))
+        if final_price <= 0:
             QMessageBox.warning(self, "Sin precio", "El precio final debe ser mayor a 0")
             return
         cantidad = self.spin_cantidad.value()
-        subtotal = cantidad * self.precio_final
+        subtotal = cantidad * final_price
+
+        aumento_porcentaje = 0
+        aumento_monto = 0
+        if self.chk_modificar.isChecked():
+            valor = self.spin_valor.value()
+            es_porcentaje = "Porcentaje" in self.combo_tipo_valor.currentText()
+            if self.radio_aumento.isChecked():
+                if es_porcentaje:
+                    aumento_porcentaje = valor
+                else:
+                    aumento_monto = valor
+            else:
+                if es_porcentaje:
+                    aumento_porcentaje = -valor
+                else:
+                    aumento_monto = -valor
 
         self.carrito.append({
             'id_producto': p['id_producto'],
             'nombre': p['nombre'],
             'cantidad': cantidad,
-            'precio_unitario': self.precio_final,
-            'descuento': 0,
+            'precio_unitario': final_price,
+            'descuento': 0,  # ya no se usa descuento separado
             'subtotal': subtotal,
-            'aumento_porcentaje': 0,
-            'aumento_monto': 0
+            'aumento_porcentaje': aumento_porcentaje,
+            'aumento_monto': aumento_monto
         })
         self.actualizar_tabla_carrito()
         self.actualizar_total()
 
         self.spin_cantidad.setValue(1)
         self.input_busqueda.clear()
-        # Restablecer precio especial a original
-        self.precio_final = self.precio_original
-        self.lbl_precio_original.setText(f"Precio original: Q {self.precio_original:.2f}")
-        self.lbl_precio_original.setStyleSheet("color:#64748B;font-size:12px;")
 
     def actualizar_tabla_carrito(self):
         self.table.setRowCount(len(self.carrito))
@@ -633,7 +620,7 @@ class VentanasVentas(QWidget):
             self.table.setItem(i, 0, QTableWidgetItem(item['nombre']))
             self.table.setItem(i, 1, QTableWidgetItem(str(item['cantidad'])))
             self.table.setItem(i, 2, QTableWidgetItem(f"Q {item['precio_unitario']:.2f}"))
-            self.table.setItem(i, 3, QTableWidgetItem("-"))
+            self.table.setItem(i, 3, QTableWidgetItem("-"))  # columna descuento vacía
             sub = QTableWidgetItem(f"Q {item['subtotal']:.2f}")
             sub.setForeground(QColor("#059669"))
             sub.setFont(QFont("Segoe UI", 10, QFont.Bold))
@@ -718,7 +705,7 @@ class VentanasVentas(QWidget):
         self.input_guia.setPlaceholderText("Número de guía (opcional)")
         envio_ly.addRow("N° Guía:", self.input_guia)
         self.spin_envio = QDoubleSpinBox()
-        self.spin_envio.setMaximum(9999999)
+        self.spin_envio.setMaximum(99999)
         self.spin_envio.setPrefix("Q ")
         self.spin_envio.valueChanged.connect(self.actualizar_total)
         envio_ly.addRow("Costo envío:", self.spin_envio)
@@ -911,9 +898,8 @@ class VentanasVentas(QWidget):
         self.combo_pago.setCurrentIndex(0)
         self.set_tipo_doc("FAC")
         self.input_busqueda.clear()
-        self.precio_final = self.precio_original
-        self.lbl_precio_original.setText(f"Precio original: Q {self.precio_original:.2f}")
-        self.lbl_precio_original.setStyleSheet("color:#64748B;font-size:12px;")
+        self.chk_modificar.setChecked(False)
+        self.spin_valor.setValue(0)
 
     def finalizar_venta(self):
         if not self.cliente_actual:
@@ -956,3 +942,11 @@ class VentanasVentas(QWidget):
         else:
             QMessageBox.warning(self, "Error", resp.get('message', 'Error desconocido'))
 
+
+# ========== MAIN ==========
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    win = VentanasVentas()
+    win.resize(1400, 860)
+    win.show()
+    sys.exit(app.exec_())

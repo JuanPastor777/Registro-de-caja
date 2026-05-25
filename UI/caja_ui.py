@@ -318,7 +318,7 @@ class VentanaCaja(QWidget):
                 COALESCE(SUM(mc.monto) FILTER (WHERE mc.tipo_movimiento = 'INGRESO'
                     AND v.id_venta IS NULL
                     AND da.id_detalle IS NULL
-                    AND mc.descripcion NOT ILIKE '%MIXTA%'), 0) AS otros_ingresos
+                    AND mc.descripcion NOT ILIKE '%%MIXTA%%'), 0) AS otros_ingresos
             FROM movimiento_caja mc
             LEFT JOIN venta v ON mc.id_movimiento = v.id_movimiento_fk
             LEFT JOIN detalle_apartado da ON mc.id_movimiento = da.id_movimiento_fk
@@ -814,7 +814,7 @@ class VentanaCaja(QWidget):
                 COALESCE(SUM(mc.monto) FILTER (WHERE mc.tipo_movimiento = 'INGRESO'
                     AND v.id_venta IS NULL
                     AND da.id_detalle IS NULL
-                    AND mc.descripcion NOT ILIKE '%MIXTA%'), 0) AS otros_ingresos
+                    AND mc.descripcion NOT ILIKE '%%MIXTA%%'), 0) AS otros_ingresos
             FROM movimiento_caja mc
             LEFT JOIN venta v ON mc.id_movimiento = v.id_movimiento_fk
             LEFT JOIN detalle_apartado da ON mc.id_movimiento = da.id_movimiento_fk

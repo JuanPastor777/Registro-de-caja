@@ -736,8 +736,10 @@ class DialogoPagoApartado(QDialog):
         pago_layout.setSpacing(12)
 
         self.monto_pago = QDoubleSpinBox()
-        self.monto_pago.setMinimum(0.01)
-        self.monto_pago.setMaximum(saldo)
+        self.monto_pago.setMinimum(0.00)
+        self.monto_pago.setDecimals(2)
+        self.monto_pago.setValue(0.00)
+        self.monto_pago.setMaximum(round(saldo, 2))
         self.monto_pago.setPrefix("Q ")
         self.monto_pago.setMinimumHeight(40)
         pago_layout.addRow("💰 Monto:", self.monto_pago)

@@ -162,7 +162,7 @@ class ApartadoService:
 
             # Verificar saldo
             total_pagado = self.obtener_total_pagado(id_apartado)
-            saldo = float(apartado['monto_final']) - total_pagado
+            saldo = round(float(apartado['monto_final']) - total_pagado, 2)
 
             if monto > saldo:
                 return {'success': False, 'message': f'El monto excede el saldo pendiente (Q{saldo:.2f})'}
@@ -197,26 +197,26 @@ class ApartadoService:
                     (monto, id_apertura)
                 )
 
-            # Registrar detalle del pago
+            # Registrar detalle del pago (guardamos forma_pago para poder desglosar en caja)
             self.db.execute_query(
                 """
                 INSERT INTO detalle_apartado
-                (id_apartado_fk, id_movimiento_fk, fecha_pago, monto)
-                VALUES (%s, %s, CURRENT_DATE, %s)
+                (id_apartado_fk, id_movimiento_fk, fecha_pago, monto, forma_pago)
+                VALUES (%s, %s, CURRENT_DATE, %s, %s)
                 """,
-                (id_apartado, id_movimiento, monto)
+                (id_apartado, id_movimiento, monto, forma_pago)
             )
 
             # Verificar si se completó el apartado
-            nuevo_total_pagado = total_pagado + monto
-            if nuevo_total_pagado >= float(apartado['monto_final']):
+            nuevo_total_pagado = round(total_pagado + monto, 2)
+            if nuevo_total_pagado >= round(float(apartado['monto_final']), 2):
                 self.db.execute_query(
                     "UPDATE apartado SET estado = 'COMPLETADO' WHERE id_apartado = %s",
                     (id_apartado,)
                 )
                 mensaje = "✅ Apartado completado exitosamente"
             else:
-                saldo_restante = float(apartado['monto_final']) - nuevo_total_pagado
+                saldo_restante = round(float(apartado['monto_final']) - nuevo_total_pagado, 2)
                 mensaje = f"💰 Pago registrado. Saldo restante: Q{saldo_restante:.2f}"
 
             return {
@@ -276,7 +276,7 @@ class ApartadoService:
         resultados = self.db.fetch_all(query) or []
         
         for r in resultados:
-            r['saldo_pendiente'] = float(r['monto_final']) - float(r['total_pagado'])
+            r['saldo_pendiente'] = round(float(r['monto_final']) - float(r['total_pagado']), 2)
             r['porcentaje_pagado'] = (float(r['total_pagado']) / float(r['monto_final'])) * 100 if r['monto_final'] > 0 else 0
         
         return resultados
@@ -334,7 +334,7 @@ class ApartadoService:
         """
         resultado = self.db.fetch_one(query, (id_apartado,))
         if resultado:
-            resultado['saldo_pendiente'] = float(resultado['monto_final']) - float(resultado['total_pagado'])
+            resultado['saldo_pendiente'] = round(float(resultado['monto_final']) - float(resultado['total_pagado']), 2)
         return resultado
     
     def obtener_historial_pagos(self, id_apartado: int) -> list[dict]:

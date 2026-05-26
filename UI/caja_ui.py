@@ -53,6 +53,8 @@ class VentanaCaja(QWidget):
         self.monto_inicial_actual = 0
         self.init_ui()
         self.verificar_estado_caja()
+        # Conectar señal de cambio de pestaña para cargar historial automáticamente
+        self.tabs.currentChanged.connect(self.on_tab_changed)
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -79,6 +81,10 @@ class VentanaCaja(QWidget):
         layout.addWidget(self.tabs)
         self.setLayout(layout)
 
+    def on_tab_changed(self, index):
+        if index == 2:  # Índice de la pestaña Historial
+            self.cargar_historial()
+
     def crear_tab_apertura_cierre(self):
         tab = QWidget()
         layout_principal = QHBoxLayout()
@@ -86,7 +92,7 @@ class VentanaCaja(QWidget):
         layout_principal.setContentsMargins(15, 15, 15, 15)
 
         # Panel izquierdo: conteo de efectivo
-        grupo_conteo = QGroupBox("Conteo de efectivo para APERTURA y CIERRE")
+        grupo_conteo = QGroupBox("Conteo de efectivo")
         grupo_conteo.setStyleSheet("""
             QGroupBox { font-weight: bold; border: 1px solid #E5E7EB; border-radius: 12px; margin-top: 12px; padding-top: 15px; }
         """)
@@ -129,23 +135,39 @@ class VentanaCaja(QWidget):
 
         ly_conteo.addLayout(grid)
 
-        # --- Nuevo: monto manual adicional ---
+        # --- Sección de monto manual directo ---
+        manual_group = QGroupBox("Monto manual (sin billetes)")
+        manual_group.setStyleSheet("""
+            QGroupBox { font-weight: bold; border: 1px solid #CBD5E1; border-radius: 12px; margin-top: 8px; padding-top: 10px; }
+        """)
         manual_layout = QHBoxLayout()
-        manual_layout.addWidget(QLabel("Monto adicional manual:"))
-        self.manual_amount = QDoubleSpinBox()
-        self.manual_amount.setMinimum(0)
-        self.manual_amount.setMaximum(9999999)
-        self.manual_amount.setPrefix("Q ")
-        self.manual_amount.valueChanged.connect(self.actualizar_totales_desde_conteo)
-        manual_layout.addWidget(self.manual_amount)
-        btn_manual = QPushButton("+ Sumar manual")
-        btn_manual.setStyleSheet("background-color: #3B82F6; color: white; border-radius: 6px;")
-        btn_manual.clicked.connect(self.agregar_monto_manual)
-        manual_layout.addWidget(btn_manual)
-        ly_conteo.addLayout(manual_layout)
+        manual_layout.setSpacing(10)
+
+        self.manual_total = QDoubleSpinBox()
+        self.manual_total.setMinimum(0)
+        self.manual_total.setMaximum(9999999)
+        self.manual_total.setPrefix("Q ")
+        self.manual_total.setValue(0)
+        self.manual_total.setMinimumWidth(150)
+        manual_layout.addWidget(QLabel("Monto único:"))
+        manual_layout.addWidget(self.manual_total)
+
+        btn_aplicar_manual = QPushButton("Aplicar monto manual (limpia billetes)")
+        btn_aplicar_manual.setStyleSheet("background-color: #3B82F6; color: white; border-radius: 6px; padding: 6px 12px;")
+        btn_aplicar_manual.clicked.connect(self.aplicar_monto_manual)
+        manual_layout.addWidget(btn_aplicar_manual)
+
+        btn_limpiar_billetes = QPushButton("Limpiar billetes")
+        btn_limpiar_billetes.setStyleSheet("background-color: #EF4444; color: white; border-radius: 6px; padding: 6px 12px;")
+        btn_limpiar_billetes.clicked.connect(self.limpiar_billetes)
+        manual_layout.addWidget(btn_limpiar_billetes)
+
+        manual_group.setLayout(manual_layout)
+        ly_conteo.addWidget(manual_group)
 
         self.lbl_total_conteo = QLabel("<b>TOTAL CONTEO: Q 0.00</b>")
         self.lbl_total_conteo.setAlignment(Qt.AlignRight)
+        self.lbl_total_conteo.setStyleSheet("font-size: 14px; margin-top: 10px;")
         ly_conteo.addWidget(self.lbl_total_conteo)
 
         grupo_conteo.setLayout(ly_conteo)
@@ -192,6 +214,20 @@ class VentanaCaja(QWidget):
         except:
             self.inputs_cantidad[den].setText("0")
 
+    def limpiar_billetes(self):
+        for den in self.inputs_cantidad:
+            self.inputs_cantidad[den].setText("0")
+        self.manual_total.setValue(0)
+        self.actualizar_totales_desde_conteo()
+
+    def aplicar_monto_manual(self):
+        # Limpiar todos los billetes y usar el monto manual como total
+        for den in self.inputs_cantidad:
+            self.inputs_cantidad[den].setText("0")
+        # El total se actualizará automáticamente porque manual_total.value() se suma en actualizar_totales
+        self.actualizar_totales_desde_conteo()
+        QMessageBox.information(self, "Monto manual", f"Monto fijado a Q {self.manual_total.value():.2f}")
+
     def actualizar_totales_desde_conteo(self):
         total = 0
         for den, edit in self.inputs_cantidad.items():
@@ -203,16 +239,10 @@ class VentanaCaja(QWidget):
             except:
                 self.labels_subtotal[den].setText("Q 0.00")
         # Sumar monto manual
-        total += self.manual_amount.value()
+        total += self.manual_total.value()
         self.lbl_total_conteo.setText(f"<b>TOTAL CONTEO: Q {total:,.2f}</b>")
         self.lbl_monto_inicial.setText(f"Q {total:,.2f}")
         return total
-
-    def agregar_monto_manual(self):
-        # Simplemente fuerza la actualización
-        self.actualizar_totales_desde_conteo()
-        # Opcional: mostrar mensaje
-        QMessageBox.information(self, "Monto manual", f"Monto adicional de Q {self.manual_amount.value():.2f} sumado al total.")
 
     def obtener_detalles_conteo(self):
         detalles = []
@@ -223,8 +253,7 @@ class VentanaCaja(QWidget):
                 subtotal = den * cant
                 detalles.append((den, cant, subtotal))
                 total += subtotal
-        total += self.manual_amount.value()
-        # Si hay monto manual, no lo incluimos en detalles de billetes, solo en total
+        total += self.manual_total.value()
         # Para el cierre, el monto contado será el total (billetes + manual)
         return detalles, total
 
@@ -389,6 +418,7 @@ class VentanaCaja(QWidget):
         QMessageBox.information(self, "Éxito", "Turno cerrado correctamente")
         self.verificar_estado_caja()
 
+    # ------------------- MÉTODOS DE MOVIMIENTOS Y RESUMEN -------------------
     def crear_tab_movimientos(self):
         tab = QWidget()
         layout = QVBoxLayout()
@@ -564,6 +594,7 @@ class VentanaCaja(QWidget):
         self.cargar_movimientos()
         self.actualizar_resumen_turno()
 
+    # ------------------- MÉTODOS DE HISTORIAL -------------------
     def crear_tab_historial(self):
         tab = QWidget()
         layout = QVBoxLayout()
@@ -575,11 +606,13 @@ class VentanaCaja(QWidget):
         ])
         self.historial_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(self.historial_table)
-        refresh_btn = QPushButton("Actualizar")
-        refresh_btn.clicked.connect(self.cargar_historial)
-        layout.addWidget(refresh_btn, alignment=Qt.AlignRight)
+        # Ya no hay botón actualizar, se carga automáticamente al cambiar de pestaña
         tab.setLayout(layout)
         return tab
+
+    # Los demás métodos (verificar_estado_caja, cargar_movimientos, actualizar_resumen_turno, cargar_historial, exportar_turno, etc.)
+    # se mantienen igual que en tu versión anterior. Solo asegúrate de que existan.
+    # Aquí incluyo los que faltan por completitud (ya los tenías, los copio desde la vers anterior)
 
     def verificar_estado_caja(self):
         query = """
@@ -623,7 +656,7 @@ class VentanaCaja(QWidget):
             self.monto_inicial_actual = 0
             for den, edit in self.inputs_cantidad.items():
                 edit.setText("0")
-            self.manual_amount.setValue(0)
+            self.manual_total.setValue(0)
             self.actualizar_totales_desde_conteo()
 
             ultimo_cierre = self.db.fetch_one("""
@@ -657,7 +690,7 @@ class VentanaCaja(QWidget):
             self.estado_frame.setStyleSheet("background-color: #FEE2E2; color: #DC2626; border-radius: 10px; padding: 15px;")
             self.apertura_btn.setEnabled(True)
             self.cierre_btn.setEnabled(False)
-            self.cargar_historial()
+            # No llamamos a cargar_historial aquí porque se cargará al cambiar de pestaña
             self.movimientos_table.setRowCount(0)
             # Limpiar resumen
             self.lbl_total_ventas.setText("Q 0.00")

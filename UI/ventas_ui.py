@@ -1,5 +1,3 @@
-# UI/ventas_ui.py
-
 import sys
 import os
 
@@ -8,7 +6,8 @@ from PyQt5.QtWidgets import (
     QPushButton, QTableWidget, QTableWidgetItem, QGroupBox,
     QFormLayout, QComboBox, QSpinBox, QDoubleSpinBox,
     QMessageBox, QHeaderView, QDialog, QCheckBox, QFrame,
-    QSizePolicy, QApplication, QRadioButton, QButtonGroup
+    QSizePolicy, QApplication, QRadioButton, QButtonGroup,
+    QScrollArea  # ← NUEVO IMPORT
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QColor
@@ -16,6 +15,7 @@ from PyQt5.QtGui import QFont, QColor
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.conexion import DatabaseConnection
 from services.venta_service import ServiceVenta
+from services.empresa_envio_service import EmpresaEnvioService
 
 # ========== ESTILOS ==========
 ESTILO_GLOBAL = """
@@ -27,6 +27,11 @@ ESTILO_GLOBAL = """
     QPushButton:hover { background: #CBD5E1; }
     QTableWidget { border: 1.5px solid #E2E8F0; border-radius: 12px; background: white; gridline-color: #F1F5F9; }
     QHeaderView::section { background: #F1F5F9; padding: 10px; font-weight: 700; }
+    QScrollArea { border: none; background: transparent; }
+    QScrollBar:vertical { border: none; background: #F1F5F9; width: 10px; border-radius: 5px; }
+    QScrollBar::handle:vertical { background: #CBD5E1; border-radius: 5px; min-height: 20px; }
+    QScrollBar::handle:vertical:hover { background: #94A3B8; }
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
 """
 BTN_PRIMARY = "QPushButton { background: #F5C800; color: white; border-radius: 8px; padding: 10px 20px; font-weight: 700; } QPushButton:hover { background: #4F46E5; }"
 BTN_SUCCESS = "QPushButton { background: #10B981; color: white; border-radius: 8px; padding: 12px 24px; font-weight: 700; } QPushButton:hover { background: #059669; }"
@@ -121,6 +126,7 @@ class DialogoNuevoProducto(QDialog):
         self.input_descripcion = QLineEdit()
         self.input_precio = QDoubleSpinBox()
         self.input_precio.setMinimum(0)
+        self.input_precio.setMaximum(999999.99)   # ← CORREGIDO: permite precios altos
         self.input_precio.setPrefix("Q ")
         self.input_precio.setValue(0)
         form.addRow("Nombre *", self.input_nombre)
@@ -337,6 +343,161 @@ class DialogoSeleccionCliente(QDialog):
         self.accept()
 
 
+class DialogoAjustePrecio(QDialog):
+    def __init__(self, precio_original, parent=None):
+        super().__init__(parent)
+        self.precio_original = float(precio_original)
+        self.precio_final = self.precio_original
+        self.aumento_porcentaje = 0
+        self.aumento_monto = 0
+        self.init_ui()
+
+    def init_ui(self):
+        self.setWindowTitle("Modificar precio para esta venta")
+        self.setFixedWidth(480)
+        self.setStyleSheet(ESTILO_GLOBAL)
+        layout = QVBoxLayout()
+        layout.setSpacing(16)
+        layout.setContentsMargins(24, 24, 24, 24)
+
+        titulo = QLabel("Ajustar precio del producto")
+        titulo.setFont(QFont("Segoe UI", 15, QFont.Bold))
+        layout.addWidget(titulo)
+
+        self.lbl_original = QLabel(f"Precio original: Q {self.precio_original:.2f}")
+        self.lbl_original.setStyleSheet("color:#64748B; font-size:13px")
+        layout.addWidget(self.lbl_original)
+
+        tipo_row = QHBoxLayout()
+        self.radio_aumento = QRadioButton("Aumento")
+        self.radio_descuento = QRadioButton("Descuento")
+        self.radio_aumento.setChecked(True)
+        self.radio_aumento.toggled.connect(self.calcular)
+        self.radio_descuento.toggled.connect(self.calcular)
+        tipo_row.addWidget(self.radio_aumento)
+        tipo_row.addWidget(self.radio_descuento)
+        tipo_row.addStretch()
+        layout.addLayout(tipo_row)
+
+        ajuste_layout = QHBoxLayout()
+        self.combo_tipo_ajuste = QComboBox()
+        self.combo_tipo_ajuste.addItems(["Monto fijo (Q)", "Porcentaje (%)"])
+        self.combo_tipo_ajuste.currentTextChanged.connect(self.calcular)
+        self.spin_valor = QDoubleSpinBox()
+        self.spin_valor.setMinimum(0)
+        self.spin_valor.setMaximum(9999999)
+        self.spin_valor.setPrefix("Q ")
+        self.spin_valor.valueChanged.connect(self.calcular)
+        ajuste_layout.addWidget(QLabel("Ajuste:"))
+        ajuste_layout.addWidget(self.combo_tipo_ajuste)
+        ajuste_layout.addWidget(self.spin_valor)
+        layout.addLayout(ajuste_layout)
+
+        self.lbl_final = QLabel(f"Precio final: Q {self.precio_final:.2f}")
+        self.lbl_final.setStyleSheet("font-weight:700; color:#10B981; font-size:14px")
+        layout.addWidget(self.lbl_final)
+
+        botones = QHBoxLayout()
+        btn_cancelar = QPushButton("Cancelar")
+        btn_cancelar.clicked.connect(self.reject)
+        btn_aplicar = QPushButton("Aplicar")
+        btn_aplicar.setStyleSheet(BTN_SUCCESS)
+        btn_aplicar.clicked.connect(self.aplicar)
+        botones.addWidget(btn_cancelar)
+        botones.addWidget(btn_aplicar)
+        layout.addLayout(botones)
+
+        self.setLayout(layout)
+
+    def calcular(self):
+        valor = self.spin_valor.value()
+        es_porcentaje = "Porcentaje" in self.combo_tipo_ajuste.currentText()
+        es_aumento = self.radio_aumento.isChecked()
+        modificacion = valor if es_aumento else -valor
+        if es_porcentaje:
+            ajuste = self.precio_original * (modificacion / 100)
+            self.aumento_porcentaje = valor if es_aumento else -valor
+            self.aumento_monto = 0
+        else:
+            ajuste = modificacion
+            self.aumento_monto = valor if es_aumento else -valor
+            self.aumento_porcentaje = 0
+        self.precio_final = max(self.precio_original + ajuste, 0)
+        self.lbl_final.setText(f"Precio final: Q {self.precio_final:.2f}")
+
+    def aplicar(self):
+        if self.precio_final <= 0:
+            QMessageBox.warning(self, "Error", "El precio final debe ser mayor a 0")
+            return
+        self.accept()
+
+    def obtener_resultado(self):
+        return {
+            'precio_final': self.precio_final,
+            'aumento_porcentaje': self.aumento_porcentaje,
+            'aumento_monto': self.aumento_monto
+        }
+
+
+class DialogoNuevaEmpresaEnvio(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.db = DatabaseConnection()
+        self.empresa_creada = None
+        self.init_ui()
+
+    def init_ui(self):
+        self.setWindowTitle("Nueva Empresa de Envío")
+        self.setFixedWidth(400)
+        self.setStyleSheet(ESTILO_GLOBAL)
+        layout = QVBoxLayout()
+        layout.setSpacing(16)
+        layout.setContentsMargins(24, 24, 24, 24)
+
+        titulo = QLabel("Agregar Nueva Empresa de Envío")
+        titulo.setFont(QFont("Segoe UI", 15, QFont.Bold))
+        layout.addWidget(titulo)
+
+        form = QFormLayout()
+        self.input_nombre = QLineEdit()
+        self.input_telefono = QLineEdit()
+        form.addRow("Nombre *", self.input_nombre)
+        form.addRow("Teléfono", self.input_telefono)
+        layout.addLayout(form)
+
+        botones = QHBoxLayout()
+        btn_cancelar = QPushButton("Cancelar")
+        btn_cancelar.clicked.connect(self.reject)
+        btn_guardar = QPushButton("Guardar")
+        btn_guardar.setStyleSheet(BTN_PRIMARY)
+        btn_guardar.clicked.connect(self.guardar)
+        botones.addWidget(btn_cancelar)
+        botones.addWidget(btn_guardar)
+        layout.addLayout(botones)
+        self.setLayout(layout)
+
+    def guardar(self):
+        nombre = self.input_nombre.text().strip()
+        if not nombre:
+            QMessageBox.warning(self, "Error", "El nombre es obligatorio")
+            return
+        telefono = self.input_telefono.text().strip() or None
+        query = """
+            INSERT INTO public.empresa_envio (nombre, telefono)
+            VALUES (%s, %s) RETURNING id_empresa, nombre, telefono
+        """
+        resultado = self.db.fetch_one(query, (nombre, telefono))
+        if resultado:
+            self.empresa_creada = {
+                'id_empresa': resultado['id_empresa'],
+                'nombre': resultado['nombre'],
+                'telefono': resultado.get('telefono')
+            }
+            self.accept()
+        else:
+            QMessageBox.warning(self, "Error", "No se pudo guardar la empresa")
+
+
 # ========== VENTANA PRINCIPAL ==========
 class VentanasVentas(QWidget):
     def __init__(self, usuario_data=None, id_caja_actual=None):
@@ -346,6 +507,7 @@ class VentanasVentas(QWidget):
         self.usuario_data = usuario_data or {}
         self.id_usuario = self.usuario_data.get('id_usuario', 1)
         self.service = ServiceVenta(id_usuario_actual=self.id_usuario)
+        self.empresa_service = EmpresaEnvioService(self.db)
         self.id_caja_actual = id_caja_actual
         self.cliente_actual = None
         self.carrito = []
@@ -380,13 +542,18 @@ class VentanasVentas(QWidget):
 
         contenido = QHBoxLayout()
         contenido.setSpacing(20)
-        contenido.addWidget(self.crear_panel_izquierdo(), 4)
+        # Panel izquierdo con scroll
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setWidget(self.crear_panel_izquierdo())
+        contenido.addWidget(scroll_area, 4)
         contenido.addWidget(self.crear_panel_carrito(), 6)
         layout.addLayout(contenido)
 
         self.setLayout(layout)
 
-    # ========== MÉTODOS AUXILIARES ==========
     def verificar_estado_caja(self):
         res = self.service.verificar_caja_abierta()
         if res['success']:
@@ -435,7 +602,6 @@ class VentanasVentas(QWidget):
         ly = QVBoxLayout()
         ly.setSpacing(10)
 
-        # Búsqueda y botón nuevo
         top = QHBoxLayout()
         self.input_busqueda = QLineEdit()
         self.input_busqueda.setPlaceholderText("🔍 Buscar producto...")
@@ -447,70 +613,26 @@ class VentanasVentas(QWidget):
         top.addWidget(btn_nuevo)
         ly.addLayout(top)
 
-        # Combo productos
         self.combo_productos = QComboBox()
         self.combo_productos.currentIndexChanged.connect(self.producto_seleccionado)
         ly.addWidget(self.combo_productos)
 
-        # Precio original
+        precio_layout = QHBoxLayout()
         self.lbl_precio_original = QLabel("Precio original: Q 0.00")
-        self.lbl_precio_original.setStyleSheet("color:#64748B;font-size:12px; margin-top: 5px;")
-        ly.addWidget(self.lbl_precio_original)
+        self.lbl_precio_original.setStyleSheet("color:#64748B;font-size:12px;")
+        self.btn_ajustar = QPushButton("Ajustar precio")
+        self.btn_ajustar.setStyleSheet(BTN_OUTLINE)
+        self.btn_ajustar.setEnabled(False)
+        self.btn_ajustar.clicked.connect(self.abrir_ajuste_precio)
+        precio_layout.addWidget(self.lbl_precio_original)
+        precio_layout.addStretch()
+        precio_layout.addWidget(self.btn_ajustar)
+        ly.addLayout(precio_layout)
 
-        # Panel de modificación de precio (compacto)
-        self.mod_frame = QFrame()
-        self.mod_frame.setStyleSheet("border:1px solid #E2E8F0; border-radius:8px; padding:6px; background:#F9FAFB; margin-top: 5px;")
-        mod_ly = QVBoxLayout(self.mod_frame)
-        mod_ly.setSpacing(6)
+        self.lbl_precio_final_info = QLabel("")
+        self.lbl_precio_final_info.setStyleSheet("color:#10B981; font-weight:600; font-size:12px")
+        ly.addWidget(self.lbl_precio_final_info)
 
-        self.chk_modificar = QCheckBox("Modificar precio para esta venta")
-        self.chk_modificar.setStyleSheet("font-weight:600")
-        self.chk_modificar.toggled.connect(self.toggle_modificacion)
-        mod_ly.addWidget(self.chk_modificar)
-
-        self.mod_widgets = QWidget()
-        mw_ly = QVBoxLayout(self.mod_widgets)
-        mw_ly.setSpacing(6)
-        self.mod_widgets.setVisible(False)
-
-        # Tipo de modificación (aumento/descuento)
-        tipo_row = QHBoxLayout()
-        self.radio_aumento = QRadioButton("Aumento")
-        self.radio_descuento = QRadioButton("Descuento")
-        self.radio_aumento.setChecked(True)
-        self.btn_group_mod = QButtonGroup()
-        self.btn_group_mod.addButton(self.radio_aumento)
-        self.btn_group_mod.addButton(self.radio_descuento)
-        tipo_row.addWidget(self.radio_aumento)
-        tipo_row.addWidget(self.radio_descuento)
-        tipo_row.addStretch()
-        mw_ly.addLayout(tipo_row)
-
-        # Valor y tipo (monto/porcentaje)
-        valor_row = QHBoxLayout()
-        self.combo_tipo_valor = QComboBox()
-        self.combo_tipo_valor.addItems(["Monto fijo (Q)", "Porcentaje (%)"])
-        self.spin_valor = QDoubleSpinBox()
-        self.spin_valor.setMinimum(0)
-        self.spin_valor.setMaximum(9999999)
-        self.spin_valor.setPrefix("Q ")
-        self.combo_tipo_valor.currentTextChanged.connect(
-            lambda t: self.spin_valor.setPrefix("Q " if "Monto" in t else "%")
-        )
-        self.spin_valor.valueChanged.connect(self.calcular_precio_modificado)
-        valor_row.addWidget(self.combo_tipo_valor)
-        valor_row.addWidget(self.spin_valor)
-        mw_ly.addLayout(valor_row)
-
-        # Precio final
-        self.lbl_precio_final = QLabel("Precio final: Q 0.00")
-        self.lbl_precio_final.setStyleSheet("font-weight:700;color:#10B981;font-size:13px")
-        mw_ly.addWidget(self.lbl_precio_final)
-
-        mod_ly.addWidget(self.mod_widgets)
-        ly.addWidget(self.mod_frame)
-
-        # Cantidad (sin descuento adicional)
         cant_layout = QHBoxLayout()
         cant_layout.addWidget(QLabel("Cantidad:"))
         self.spin_cantidad = QSpinBox()
@@ -520,12 +642,10 @@ class VentanasVentas(QWidget):
         cant_layout.addStretch()
         ly.addLayout(cant_layout)
 
-        # Preview subtotal
         self.lbl_preview = QLabel("Subtotal: Q 0.00")
         self.lbl_preview.setStyleSheet("color:#6366F1;font-weight:600; margin-top: 5px;")
         ly.addWidget(self.lbl_preview)
 
-        # Botón agregar
         btn_add = QPushButton("＋ Agregar al Carrito")
         btn_add.setStyleSheet(BTN_PRIMARY)
         btn_add.clicked.connect(self.agregar_producto)
@@ -534,37 +654,31 @@ class VentanasVentas(QWidget):
         box.setLayout(ly)
         return box
 
-    def toggle_modificacion(self, checked):
-        self.mod_widgets.setVisible(checked)
-        if not checked:
-            self.calcular_precio_modificado()
-
     def producto_seleccionado(self):
         p = self.combo_productos.currentData()
         if p:
             self.precio_original = float(p.get('precio_costo', 0))
             self.lbl_precio_original.setText(f"Precio original: Q {self.precio_original:.2f}")
-            self.calcular_precio_modificado()
+            self.btn_ajustar.setEnabled(True)
+            self.precio_final = self.precio_original
+            self.lbl_precio_final_info.setText("")
+            self.actualizar_preview()
         else:
             self.precio_original = 0
+            self.btn_ajustar.setEnabled(False)
 
-    def calcular_precio_modificado(self):
-        if not self.chk_modificar.isChecked() or self.precio_original == 0:
-            self.precio_final = self.precio_original
-            self.lbl_precio_final.setText(f"Precio final: Q {self.precio_original:.2f}")
-            self.actualizar_preview()
+    def abrir_ajuste_precio(self):
+        if self.precio_original <= 0:
+            QMessageBox.warning(self, "Error", "Seleccione un producto primero")
             return
-
-        valor = self.spin_valor.value()
-        es_porcentaje = "Porcentaje" in self.combo_tipo_valor.currentText()
-        modificacion = valor if self.radio_aumento.isChecked() else -valor
-        if es_porcentaje:
-            ajuste = self.precio_original * (modificacion / 100)
-        else:
-            ajuste = modificacion
-        self.precio_final = max(self.precio_original + ajuste, 0)
-        self.lbl_precio_final.setText(f"Precio final: Q {self.precio_final:.2f}")
-        self.actualizar_preview()
+        dlg = DialogoAjustePrecio(self.precio_original, self)
+        if dlg.exec_():
+            res = dlg.obtener_resultado()
+            self.precio_final = res['precio_final']
+            self.aumento_porcentaje = res['aumento_porcentaje']
+            self.aumento_monto = res['aumento_monto']
+            self.lbl_precio_final_info.setText(f"Precio ajustado: Q {self.precio_final:.2f}")
+            self.actualizar_preview()
 
     def actualizar_preview(self):
         subtotal = self.spin_cantidad.value() * self.precio_final
@@ -575,35 +689,21 @@ class VentanasVentas(QWidget):
         if not p:
             QMessageBox.warning(self, "Error", "Seleccione producto")
             return
-        final_price = self.precio_final if hasattr(self, 'precio_final') else float(p.get('precio_costo', 0))
-        if final_price <= 0:
+        if self.precio_final <= 0:
             QMessageBox.warning(self, "Sin precio", "El precio final debe ser mayor a 0")
             return
         cantidad = self.spin_cantidad.value()
-        subtotal = cantidad * final_price
+        subtotal = cantidad * self.precio_final
 
-        aumento_porcentaje = 0
-        aumento_monto = 0
-        if self.chk_modificar.isChecked():
-            valor = self.spin_valor.value()
-            es_porcentaje = "Porcentaje" in self.combo_tipo_valor.currentText()
-            if self.radio_aumento.isChecked():
-                if es_porcentaje:
-                    aumento_porcentaje = valor
-                else:
-                    aumento_monto = valor
-            else:
-                if es_porcentaje:
-                    aumento_porcentaje = -valor
-                else:
-                    aumento_monto = -valor
+        aumento_porcentaje = getattr(self, 'aumento_porcentaje', 0)
+        aumento_monto = getattr(self, 'aumento_monto', 0)
 
         self.carrito.append({
             'id_producto': p['id_producto'],
             'nombre': p['nombre'],
             'cantidad': cantidad,
-            'precio_unitario': final_price,
-            'descuento': 0,  # ya no se usa descuento separado
+            'precio_unitario': self.precio_final,
+            'descuento': 0,
             'subtotal': subtotal,
             'aumento_porcentaje': aumento_porcentaje,
             'aumento_monto': aumento_monto
@@ -611,8 +711,13 @@ class VentanasVentas(QWidget):
         self.actualizar_tabla_carrito()
         self.actualizar_total()
 
+        self.precio_final = self.precio_original
+        self.lbl_precio_final_info.setText("")
+        self.aumento_porcentaje = 0
+        self.aumento_monto = 0
         self.spin_cantidad.setValue(1)
         self.input_busqueda.clear()
+        self.btn_ajustar.setEnabled(True)
 
     def actualizar_tabla_carrito(self):
         self.table.setRowCount(len(self.carrito))
@@ -620,15 +725,34 @@ class VentanasVentas(QWidget):
             self.table.setItem(i, 0, QTableWidgetItem(item['nombre']))
             self.table.setItem(i, 1, QTableWidgetItem(str(item['cantidad'])))
             self.table.setItem(i, 2, QTableWidgetItem(f"Q {item['precio_unitario']:.2f}"))
-            self.table.setItem(i, 3, QTableWidgetItem("-"))  # columna descuento vacía
+
+            ajuste_texto = "-"
+            aumento_porcentaje = item.get('aumento_porcentaje', 0)
+            aumento_monto = item.get('aumento_monto', 0)
+
+            if aumento_porcentaje != 0:
+                if aumento_porcentaje > 0:
+                    ajuste_texto = f"+{aumento_porcentaje}%"
+                else:
+                    ajuste_texto = f"{aumento_porcentaje}%"
+            elif aumento_monto != 0:
+                if aumento_monto > 0:
+                    ajuste_texto = f"+Q {aumento_monto:.2f}"
+                else:
+                    ajuste_texto = f"-Q {abs(aumento_monto):.2f}"
+
+            self.table.setItem(i, 3, QTableWidgetItem(ajuste_texto))
+
             sub = QTableWidgetItem(f"Q {item['subtotal']:.2f}")
             sub.setForeground(QColor("#059669"))
             sub.setFont(QFont("Segoe UI", 10, QFont.Bold))
             self.table.setItem(i, 4, sub)
+
             btn = QPushButton("✕")
             btn.setStyleSheet(BTN_DANGER)
             btn.clicked.connect(lambda _, r=i: self.eliminar_producto(r))
             self.table.setCellWidget(i, 5, btn)
+
         self.lbl_items.setText(f"{len(self.carrito)} producto{'s' if len(self.carrito) != 1 else ''}")
 
     def eliminar_producto(self, row):
@@ -699,8 +823,17 @@ class VentanasVentas(QWidget):
         self.frame_envio = QFrame()
         envio_ly = QFormLayout()
         envio_ly.setSpacing(8)
+
+        empresa_layout = QHBoxLayout()
         self.combo_empresa = QComboBox()
-        envio_ly.addRow("Empresa:", self.combo_empresa)
+        self.combo_empresa.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        btn_nueva_empresa = QPushButton("+ Nueva")
+        btn_nueva_empresa.setStyleSheet(BTN_OUTLINE)
+        btn_nueva_empresa.clicked.connect(self.abrir_nueva_empresa)
+        empresa_layout.addWidget(self.combo_empresa, 1)
+        empresa_layout.addWidget(btn_nueva_empresa)
+        envio_ly.addRow("Empresa:", empresa_layout)
+
         self.input_guia = QLineEdit()
         self.input_guia.setPlaceholderText("Número de guía (opcional)")
         envio_ly.addRow("N° Guía:", self.input_guia)
@@ -721,12 +854,20 @@ class VentanasVentas(QWidget):
         self.frame_envio.setVisible(ch)
 
     def cargar_empresas(self):
-        query = "SELECT id_empresa, nombre, telefono FROM public.empresa_envio ORDER BY nombre"
-        emp = self.db.fetch_all(query) or []
-        self.empresas_data = emp
+        empresas = self.empresa_service.listar_empresas()
+        self.empresas_data = empresas
         self.combo_empresa.clear()
-        for e in emp:
+        for e in empresas:
             self.combo_empresa.addItem(e['nombre'], e['id_empresa'])
+
+    def abrir_nueva_empresa(self):
+        dlg = DialogoNuevaEmpresaEnvio(self)
+        if dlg.exec_():
+            nueva = dlg.empresa_creada
+            if nueva:
+                self.empresas_data.append(nueva)
+                self.combo_empresa.addItem(nueva['nombre'], nueva['id_empresa'])
+                self.combo_empresa.setCurrentText(nueva['nombre'])
 
     def crear_panel_carrito(self):
         w = QWidget()
@@ -745,7 +886,7 @@ class VentanasVentas(QWidget):
 
         self.table = QTableWidget()
         self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(["Producto", "Cant.", "Precio Unit.", "Descuento", "Subtotal", ""])
+        self.table.setHorizontalHeaderLabels(["Producto", "Cant.", "Precio Unit.", "Ajuste", "Subtotal", ""])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.table.setColumnWidth(5, 50)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -898,8 +1039,11 @@ class VentanasVentas(QWidget):
         self.combo_pago.setCurrentIndex(0)
         self.set_tipo_doc("FAC")
         self.input_busqueda.clear()
-        self.chk_modificar.setChecked(False)
-        self.spin_valor.setValue(0)
+        self.precio_final = 0
+        self.aumento_porcentaje = 0
+        self.aumento_monto = 0
+        self.lbl_precio_final_info.setText("")
+        self.btn_ajustar.setEnabled(False)
 
     def finalizar_venta(self):
         if not self.cliente_actual:
@@ -943,7 +1087,6 @@ class VentanasVentas(QWidget):
             QMessageBox.warning(self, "Error", resp.get('message', 'Error desconocido'))
 
 
-# ========== MAIN ==========
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     win = VentanasVentas()

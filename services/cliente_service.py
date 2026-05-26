@@ -89,39 +89,3 @@ class ClienteService:
     def actualizar(self, id_cliente, nombre, apellido, telefono):
         self.dao.actualizar(Cliente(id_cliente, nombre, apellido, telefono))
 
-if __name__ == "__main__":
-    service = ClienteService()
-
-    while True:
-        print("\n--- CLIENTES ---")
-        print("1. Crear")
-        print("2. Listar")
-        print("3. Editar")
-        print("4. Eliminar")
-        print("5. Salir")
-
-        op = input("Opción: ")
-
-        if op == "1":
-            n = input("Nombre: ")
-            a = input("Apellido: ")
-            t = input("Teléfono: ")
-            service.crear(n, a, t)
-
-        elif op == "2":
-            for c in service.listar():
-                print(c.id_cliente, c.nombre, c.apellido, c.telefono)
-
-        elif op == "3":
-            idc = input("ID: ")
-            n = input("Nuevo nombre: ")
-            a = input("Nuevo apellido: ")
-            t = input("Teléfono: ")
-            service.actualizar(idc, n, a, t)
-
-        elif op == "4":
-            idc = input("ID: ")
-            service.eliminar(idc)
-
-        elif op == "5":
-            break

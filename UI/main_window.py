@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QLabel,
                               QPushButton, QMessageBox, QHBoxLayout, QFrame,
                               QGraphicsDropShadowEffect, QSizePolicy)
 from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect, QTimer
-from PyQt5.QtGui import QFont, QColor, QLinearGradient, QPainter, QPalette
+from PyQt5.QtGui import QFont, QColor, QLinearGradient, QPainter, QPalette, QPixmap
 import sys
 import os
 
@@ -171,8 +171,8 @@ class MainWindow(QMainWindow):
         sidebar.setGraphicsEffect(shadow)
 
         layout = QVBoxLayout()
-        layout.setContentsMargins(14, 28, 14, 28)
-        layout.setSpacing(4)
+        layout.setContentsMargins(14, 28, 14, 20)
+        layout.setSpacing(8)
 
         # Botón toggle
         toggle_btn = QPushButton("☰")
@@ -181,34 +181,35 @@ class MainWindow(QMainWindow):
         toggle_btn.clicked.connect(self.toggle_sidebar)
         layout.addWidget(toggle_btn, alignment=Qt.AlignLeft)
 
-        # Logo
+        # Logo - SIN FONDO AMARILLO Y CENTRADO
         self.logo_frame = QFrame()
-        self.logo_frame.setStyleSheet(f"""
-            QFrame {{
-                background-color: {C_AMARILLO};
-                border-radius: 12px;
-            }}
-        """)
+        self.logo_frame.setStyleSheet("background-color: transparent; border: none;")
         logo_lay = QHBoxLayout(self.logo_frame)
-        logo_lay.setContentsMargins(14, 8, 14, 8)
-        logo_lay.setSpacing(8)
+        logo_lay.setContentsMargins(0, 0, 0, 0)
+        logo_lay.setSpacing(0)
 
-        self.tec_lbl = QLabel("TEC")
-        self.tec_lbl.setFont(QFont("Arial Black", 15, QFont.Black))
-        self.tec_lbl.setStyleSheet("color: #111111; background: transparent;")
-        self.shop_lbl = QLabel("SHOP")
-        self.shop_lbl.setFont(QFont("Arial", 15, QFont.Bold))
-        self.shop_lbl.setStyleSheet("color: #333333; background: transparent;")
-        dot_lbl = QLabel("🛒")
-        dot_lbl.setFont(QFont("Segoe UI Emoji", 16))
-        dot_lbl.setStyleSheet("background: transparent;")
-
-        logo_lay.addWidget(dot_lbl)
-        logo_lay.addWidget(self.tec_lbl)
-        logo_lay.addWidget(self.shop_lbl)
+        # Cargar el logo desde assets/logo.png
+        logo_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "logo.png")
+        self.logo_pixmap = QPixmap(logo_path)
+        self.logo_label = QLabel()
+        if not self.logo_pixmap.isNull():
+            self.logo_label.setPixmap(self.logo_pixmap.scaled(160, 60, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self.logo_label.setAlignment(Qt.AlignCenter)
+        else:
+            self.logo_label.setText("🏪")
+            self.logo_label.setFont(QFont("Segoe UI Emoji", 28))
+            self.logo_label.setAlignment(Qt.AlignCenter)
+        
+        logo_lay.addWidget(self.logo_label)
         logo_lay.addStretch()
-        layout.addWidget(self.logo_frame)
-        layout.addSpacing(6)
+        
+        # Centrar el logo_frame horizontalmente
+        logo_container = QHBoxLayout()
+        logo_container.addStretch()
+        logo_container.addWidget(self.logo_frame)
+        logo_container.addStretch()
+        layout.addLayout(logo_container)
+        layout.addSpacing(20)
 
         sep_lbl = QLabel("MENÚ PRINCIPAL")
         sep_lbl.setFont(QFont("Segoe UI", 8, QFont.Bold))
@@ -237,14 +238,10 @@ class MainWindow(QMainWindow):
             self.sidebar_btns.append(btn)
             layout.addWidget(btn)
 
+        # Espacio flexible para empujar el panel de usuario hacia abajo
         layout.addStretch()
-        line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet("color: #1F2937;")
-        layout.addWidget(line)
-        layout.addSpacing(8)
 
-        # Panel usuario
+        # Panel usuario - MEJORADO PARA CERRAR SESIÓN
         self.user_frame = QFrame()
         self.user_frame.setStyleSheet(f"""
             QFrame {{
@@ -253,24 +250,25 @@ class MainWindow(QMainWindow):
             }}
         """)
         u_lay = QVBoxLayout(self.user_frame)
-        u_lay.setContentsMargins(14, 14, 14, 14)
-        u_lay.setSpacing(4)
+        u_lay.setContentsMargins(14, 12, 14, 12)
+        u_lay.setSpacing(6)
 
         self.avatar_lbl = QLabel("👤  " + self.usuario_data['nombre'])
-        self.avatar_lbl.setFont(QFont("Segoe UI", 12, QFont.Bold))
+        self.avatar_lbl.setFont(QFont("Segoe UI", 11, QFont.Bold))
         self.avatar_lbl.setStyleSheet(f"color: {C_WHITE}; background: transparent;")
         u_lay.addWidget(self.avatar_lbl)
 
         self.rol_lbl = QLabel(f"🔑  {self.usuario_data['rol'].capitalize()}")
-        self.rol_lbl.setFont(QFont("Segoe UI", 10))
+        self.rol_lbl.setFont(QFont("Segoe UI", 9))
         self.rol_lbl.setStyleSheet(f"color: {C_GRAY_400}; background: transparent;")
         u_lay.addWidget(self.rol_lbl)
 
-        u_lay.addSpacing(6)
-        logout_btn = QPushButton("⏻   Cerrar Sesión")
-        logout_btn.setFixedHeight(36)
-        logout_btn.setCursor(Qt.PointingHandCursor)
-        logout_btn.setStyleSheet(f"""
+        u_lay.addSpacing(8)
+        
+        self.logout_btn = QPushButton("⏻   Cerrar Sesión")
+        self.logout_btn.setFixedHeight(34)
+        self.logout_btn.setCursor(Qt.PointingHandCursor)
+        self.logout_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: transparent;
                 color: {C_ACCENT_RED};
@@ -284,10 +282,12 @@ class MainWindow(QMainWindow):
                 background-color: #3B1414;
             }}
         """)
-        logout_btn.clicked.connect(self.cerrar_sesion)
-        u_lay.addWidget(logout_btn)
+        self.logout_btn.clicked.connect(self.cerrar_sesion)
+        u_lay.addWidget(self.logout_btn)
 
         layout.addWidget(self.user_frame)
+        layout.addSpacing(4)
+
         sidebar.setLayout(layout)
         return sidebar
 
@@ -298,17 +298,31 @@ class MainWindow(QMainWindow):
         # Ajustar textos de botones
         for btn in self.sidebar_btns:
             btn.update_text(not self.sidebar_collapsed)
-        # Ocultar/mostrar elementos del logo y separador
-        self.tec_lbl.setVisible(not self.sidebar_collapsed)
-        self.shop_lbl.setVisible(not self.sidebar_collapsed)
-        self.sep_lbl.setVisible(not self.sidebar_collapsed)
-        # Ajustar texto del usuario
+        # Ajustar logo: cambiar tamaño según colapsado
         if self.sidebar_collapsed:
+            if not self.logo_pixmap.isNull():
+                self.logo_label.setPixmap(self.logo_pixmap.scaled(45, 45, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            else:
+                self.logo_label.setFont(QFont("Segoe UI Emoji", 20))
+            self.sep_lbl.setVisible(False)
+            # Ajustar panel usuario para colapsado
             self.avatar_lbl.setText("👤")
             self.rol_lbl.setText("")
+            self.logout_btn.setText("⏻")
+            self.logout_btn.setFixedWidth(36)
+            self.logout_btn.setFixedHeight(36)
         else:
+            if not self.logo_pixmap.isNull():
+                self.logo_label.setPixmap(self.logo_pixmap.scaled(160, 60, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            else:
+                self.logo_label.setFont(QFont("Segoe UI Emoji", 28))
+            self.sep_lbl.setVisible(True)
+            # Restaurar panel usuario para expandido
             self.avatar_lbl.setText("👤  " + self.usuario_data['nombre'])
             self.rol_lbl.setText(f"🔑  {self.usuario_data['rol'].capitalize()}")
+            self.logout_btn.setText("⏻   Cerrar Sesión")
+            self.logout_btn.setFixedWidth(9999)
+            self.logout_btn.setFixedHeight(34)
 
     def _set_active_btn(self, nombre: str):
         for name, btn in self._sidebar_buttons.items():

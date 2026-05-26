@@ -15,22 +15,16 @@ from datetime import datetime
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.conexion import DatabaseConnection
 
-
-# =========================================================
-# DIÁLOGO PARA VER DENOMINACIONES DE UN CIERRE (solo lectura)
-# =========================================================
 class DialogoDenominaciones(QDialog):
     def __init__(self, titulo, detalles, parent=None):
         super().__init__(parent)
         self.setWindowTitle(titulo)
         self.setFixedSize(400, 300)
         layout = QVBoxLayout()
-
         table = QTableWidget()
         table.setColumnCount(3)
         table.setHorizontalHeaderLabels(["Denominación", "Cantidad", "Subtotal"])
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-
         total = 0
         table.setRowCount(len(detalles))
         for i, (den, cant, subtotal) in enumerate(detalles):
@@ -38,23 +32,15 @@ class DialogoDenominaciones(QDialog):
             table.setItem(i, 1, QTableWidgetItem(str(cant)))
             table.setItem(i, 2, QTableWidgetItem(f"Q {subtotal:.2f}"))
             total += subtotal
-
         layout.addWidget(table)
-
         lbl_total = QLabel(f"<b>TOTAL: Q {total:.2f}</b>")
         lbl_total.setAlignment(Qt.AlignRight)
         layout.addWidget(lbl_total)
-
         btn_box = QDialogButtonBox(QDialogButtonBox.Ok)
         btn_box.accepted.connect(self.accept)
         layout.addWidget(btn_box)
-
         self.setLayout(layout)
 
-
-# =========================================================
-# VENTANA CAJA PRINCIPAL
-# =========================================================
 class VentanaCaja(QWidget):
     caja_abierta_signal = pyqtSignal(int)
 
@@ -76,7 +62,6 @@ class VentanaCaja(QWidget):
         header.setFont(QFont("Segoe UI", 18, QFont.Bold))
         layout.addWidget(header)
 
-        # Panel de estado principal
         self.estado_frame = QLabel()
         self.estado_frame.setStyleSheet("border-radius: 10px; padding: 15px; font-weight: bold;")
         self.estado_frame.setWordWrap(True)
@@ -94,7 +79,6 @@ class VentanaCaja(QWidget):
         layout.addWidget(self.tabs)
         self.setLayout(layout)
 
-    # ------------------- TAB APERTURA/CIERRE -------------------
     def crear_tab_apertura_cierre(self):
         tab = QWidget()
         layout_principal = QHBoxLayout()
@@ -112,7 +96,6 @@ class VentanaCaja(QWidget):
         self.denominaciones = [200, 100, 50, 20, 10, 5, 1]
         self.inputs_cantidad = {}
         self.labels_subtotal = {}
-
         validador = QIntValidator(0, 9999)
 
         for i, den in enumerate(self.denominaciones):
@@ -145,6 +128,21 @@ class VentanaCaja(QWidget):
             grid.addWidget(lbl_sub, i, 4)
 
         ly_conteo.addLayout(grid)
+
+        # --- Nuevo: monto manual adicional ---
+        manual_layout = QHBoxLayout()
+        manual_layout.addWidget(QLabel("Monto adicional manual:"))
+        self.manual_amount = QDoubleSpinBox()
+        self.manual_amount.setMinimum(0)
+        self.manual_amount.setMaximum(9999999)
+        self.manual_amount.setPrefix("Q ")
+        self.manual_amount.valueChanged.connect(self.actualizar_totales_desde_conteo)
+        manual_layout.addWidget(self.manual_amount)
+        btn_manual = QPushButton("+ Sumar manual")
+        btn_manual.setStyleSheet("background-color: #3B82F6; color: white; border-radius: 6px;")
+        btn_manual.clicked.connect(self.agregar_monto_manual)
+        manual_layout.addWidget(btn_manual)
+        ly_conteo.addLayout(manual_layout)
 
         self.lbl_total_conteo = QLabel("<b>TOTAL CONTEO: Q 0.00</b>")
         self.lbl_total_conteo.setAlignment(Qt.AlignRight)
@@ -204,9 +202,17 @@ class VentanaCaja(QWidget):
                 total += subtotal
             except:
                 self.labels_subtotal[den].setText("Q 0.00")
+        # Sumar monto manual
+        total += self.manual_amount.value()
         self.lbl_total_conteo.setText(f"<b>TOTAL CONTEO: Q {total:,.2f}</b>")
         self.lbl_monto_inicial.setText(f"Q {total:,.2f}")
         return total
+
+    def agregar_monto_manual(self):
+        # Simplemente fuerza la actualización
+        self.actualizar_totales_desde_conteo()
+        # Opcional: mostrar mensaje
+        QMessageBox.information(self, "Monto manual", f"Monto adicional de Q {self.manual_amount.value():.2f} sumado al total.")
 
     def obtener_detalles_conteo(self):
         detalles = []
@@ -217,6 +223,9 @@ class VentanaCaja(QWidget):
                 subtotal = den * cant
                 detalles.append((den, cant, subtotal))
                 total += subtotal
+        total += self.manual_amount.value()
+        # Si hay monto manual, no lo incluimos en detalles de billetes, solo en total
+        # Para el cierre, el monto contado será el total (billetes + manual)
         return detalles, total
 
     def abrir_caja(self):
@@ -267,7 +276,6 @@ class VentanaCaja(QWidget):
 
         detalles_cierre, monto_contado = self.obtener_detalles_conteo()
 
-        # Calcular efectivo esperado usando la misma lógica que en el resumen
         apertura = self.db.fetch_one(
             "SELECT id_caja_fk, fecha_hora_apertura FROM apertura_cierre WHERE id_apertura = %s",
             (self.id_apertura_actual,)
@@ -289,7 +297,6 @@ class VentanaCaja(QWidget):
         normales = self.db.fetch_one(query_normales, (id_caja, desde)) or {}
         efectivo_norm = float(normales.get('efectivo', 0))
 
-        # Pagos mixtos (efectivo)
         query_mixtos = """
             SELECT COALESCE(SUM(dpm.monto) FILTER (WHERE dpm.forma_pago = 'EFECTIVO'), 0) AS efectivo
             FROM detalle_pago_mixto dpm
@@ -301,7 +308,6 @@ class VentanaCaja(QWidget):
         mixtos = self.db.fetch_one(query_mixtos, (id_caja, desde)) or {}
         efectivo_mix = float(mixtos.get('efectivo', 0))
 
-        # Efectivo de apartados
         query_aptos_ef = """
             SELECT COALESCE(SUM(da.monto) FILTER (WHERE da.forma_pago = 'EF'), 0) AS efectivo
             FROM detalle_apartado da
@@ -311,7 +317,6 @@ class VentanaCaja(QWidget):
         aptos_ef = self.db.fetch_one(query_aptos_ef, (id_caja, desde)) or {}
         efectivo_apartados = float(aptos_ef.get('efectivo', 0))
 
-        # Otros ingresos y egresos (excluye ventas, apartados y movimientos huerfanos de mixtas)
         query_otros = """
             SELECT 
                 COALESCE(SUM(mc.monto) FILTER (WHERE mc.tipo_movimiento = 'EGRESO'), 0) AS egresos,
@@ -384,12 +389,13 @@ class VentanaCaja(QWidget):
         QMessageBox.information(self, "Éxito", "Turno cerrado correctamente")
         self.verificar_estado_caja()
 
-    # ------------------- TAB MOVIMIENTOS Y RESUMEN -------------------
     def crear_tab_movimientos(self):
         tab = QWidget()
         layout = QVBoxLayout()
+        layout.setSpacing(15)
+        layout.setContentsMargins(10, 10, 10, 10)
 
-        # Panel de resumen del turno (con líneas separadas)
+        # Resumen del turno en grid de 2 columnas
         resumen_group = QGroupBox("Resumen del Turno Actual")
         resumen_group.setStyleSheet("""
             QGroupBox {
@@ -402,51 +408,55 @@ class VentanaCaja(QWidget):
             }
         """)
         resumen_layout = QGridLayout()
+        resumen_layout.setHorizontalSpacing(20)
+        resumen_layout.setVerticalSpacing(8)
 
+        # Primera columna
+        resumen_layout.addWidget(QLabel("TOTAL VENTAS DEL TURNO:"), 0, 0)
         self.lbl_total_ventas = QLabel("Q 0.00")
         self.lbl_total_ventas.setStyleSheet("font-size: 16px; font-weight: bold; color: #111827;")
-        resumen_layout.addWidget(QLabel(" TOTAL VENTAS DEL TURNO:"), 0, 0)
         resumen_layout.addWidget(self.lbl_total_ventas, 0, 1)
 
+        resumen_layout.addWidget(QLabel("💵 Efectivo:"), 1, 0)
         self.lbl_ventas_efectivo = QLabel("Q 0.00")
         self.lbl_ventas_efectivo.setStyleSheet("color: #10B981; font-weight: bold;")
-        resumen_layout.addWidget(QLabel("   💵 Efectivo:"), 1, 0)
         resumen_layout.addWidget(self.lbl_ventas_efectivo, 1, 1)
 
+        resumen_layout.addWidget(QLabel("💳 Tarjeta:"), 2, 0)
         self.lbl_ventas_tarjeta = QLabel("Q 0.00")
         self.lbl_ventas_tarjeta.setStyleSheet("color: #3B82F6;")
-        resumen_layout.addWidget(QLabel("   💳 Tarjeta:"), 2, 0)
         resumen_layout.addWidget(self.lbl_ventas_tarjeta, 2, 1)
 
+        resumen_layout.addWidget(QLabel("🏦 Transferencia:"), 3, 0)
         self.lbl_ventas_transferencia = QLabel("Q 0.00")
         self.lbl_ventas_transferencia.setStyleSheet("color: #8B5CF6;")
-        resumen_layout.addWidget(QLabel("   🏦 Transferencia:"), 3, 0)
         resumen_layout.addWidget(self.lbl_ventas_transferencia, 3, 1)
 
+        # Segunda columna
+        resumen_layout.addWidget(QLabel("📥 Depósito:"), 0, 2)
         self.lbl_ventas_deposito = QLabel("Q 0.00")
         self.lbl_ventas_deposito.setStyleSheet("color: #F59E0B;")
-        resumen_layout.addWidget(QLabel("   📥 Depósito:"), 4, 0)
-        resumen_layout.addWidget(self.lbl_ventas_deposito, 4, 1)
+        resumen_layout.addWidget(self.lbl_ventas_deposito, 0, 3)
 
+        resumen_layout.addWidget(QLabel("📦 Cuentas por cobrar:"), 1, 2)
         self.lbl_cuentas_cobrar = QLabel("Q 0.00")
         self.lbl_cuentas_cobrar.setStyleSheet("color: #F59E0B;")
-        resumen_layout.addWidget(QLabel("   📦 Cuentas por cobrar (envíos no pagados):"), 5, 0)
-        resumen_layout.addWidget(self.lbl_cuentas_cobrar, 5, 1)
+        resumen_layout.addWidget(self.lbl_cuentas_cobrar, 1, 3)
 
+        resumen_layout.addWidget(QLabel("💰 EFECTIVO ACTUAL EN CAJA:"), 2, 2)
         self.lbl_efectivo_actual = QLabel("Q 0.00")
         self.lbl_efectivo_actual.setStyleSheet("font-size: 18px; font-weight: bold; color: #059669;")
-        resumen_layout.addWidget(QLabel("💰 EFECTIVO ACTUAL EN CAJA:"), 6, 0)
-        resumen_layout.addWidget(self.lbl_efectivo_actual, 6, 1)
+        resumen_layout.addWidget(self.lbl_efectivo_actual, 2, 3)
 
+        resumen_layout.addWidget(QLabel("💸 Egresos (gastos/retiros):"), 3, 2)
         self.lbl_egresos = QLabel("Q 0.00")
         self.lbl_egresos.setStyleSheet("color: #EF4444;")
-        resumen_layout.addWidget(QLabel("   💸 Egresos (gastos/retiros):"), 7, 0)
-        resumen_layout.addWidget(self.lbl_egresos, 7, 1)
+        resumen_layout.addWidget(self.lbl_egresos, 3, 3)
 
         resumen_group.setLayout(resumen_layout)
         layout.addWidget(resumen_group)
 
-        # Formulario para registrar movimientos manuales
+        # Formulario de movimientos en horizontal
         form_group = QGroupBox("Registrar Movimiento Manual")
         form_group.setStyleSheet("""
             QGroupBox {
@@ -457,44 +467,53 @@ class VentanaCaja(QWidget):
                 padding-top: 10px;
             }
         """)
-        form_layout = QFormLayout()
+        form_layout = QHBoxLayout()
+        form_layout.setSpacing(10)
 
         self.tipo_movimiento = QComboBox()
         self.tipo_movimiento.addItems(["INGRESO", "EGRESO"])
         self.tipo_movimiento.currentTextChanged.connect(self.toggle_gasto_field)
-        form_layout.addRow("Tipo:", self.tipo_movimiento)
+        self.tipo_movimiento.setMinimumWidth(120)
+        form_layout.addWidget(QLabel("Tipo:"))
+        form_layout.addWidget(self.tipo_movimiento)
 
         self.tipo_gasto = QComboBox()
         self.tipo_gasto.addItems(["PROVEEDOR", "SUELDOS", "SERVICIOS", "INSUMOS", "DEVOLUCION", "OTRO"])
         self.tipo_gasto.setEnabled(False)
-        form_layout.addRow("Tipo Gasto:", self.tipo_gasto)
+        self.tipo_gasto.setMinimumWidth(120)
+        form_layout.addWidget(QLabel("Tipo Gasto:"))
+        form_layout.addWidget(self.tipo_gasto)
 
         self.descripcion_mov = QLineEdit()
-        self.descripcion_mov.setPlaceholderText("Descripción del movimiento")
-        form_layout.addRow("Descripción:", self.descripcion_mov)
+        self.descripcion_mov.setPlaceholderText("Descripción")
+        self.descripcion_mov.setMinimumWidth(200)
+        form_layout.addWidget(QLabel("Descripción:"))
+        form_layout.addWidget(self.descripcion_mov)
 
         self.monto_mov = QDoubleSpinBox()
         self.monto_mov.setMinimum(0)
         self.monto_mov.setMaximum(100000)
         self.monto_mov.setPrefix("Q ")
-        form_layout.addRow("Monto:", self.monto_mov)
+        self.monto_mov.setMinimumWidth(120)
+        form_layout.addWidget(QLabel("Monto:"))
+        form_layout.addWidget(self.monto_mov)
 
         registrar_btn = QPushButton("Registrar Movimiento")
-        registrar_btn.setStyleSheet("background-color: #F5C800; border: none; border-radius: 8px; padding: 10px; font-weight: bold;")
+        registrar_btn.setStyleSheet("background-color: #F5C800; border-radius: 8px; padding: 8px 16px; font-weight: bold;")
         registrar_btn.clicked.connect(self.registrar_movimiento)
-        form_layout.addRow(registrar_btn)
+        form_layout.addWidget(registrar_btn)
 
         form_group.setLayout(form_layout)
         layout.addWidget(form_group)
 
-        # Tabla de movimientos del turno (con columna Forma Pago)
+        # Tabla de movimientos
         self.movimientos_table = QTableWidget()
         self.movimientos_table.setColumnCount(6)
         self.movimientos_table.setHorizontalHeaderLabels(["Fecha", "Tipo", "Forma Pago", "Descripción", "Monto", "Usuario"])
         self.movimientos_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(self.movimientos_table)
 
-        # Botón exportar turno
+        # Botón exportar
         btn_exportar_turno = QPushButton("Exportar turno actual a Excel")
         btn_exportar_turno.clicked.connect(self.exportar_turno)
         btn_exportar_turno.setStyleSheet("background-color: #F5C800; border-radius: 8px; padding: 6px;")
@@ -545,11 +564,9 @@ class VentanaCaja(QWidget):
         self.cargar_movimientos()
         self.actualizar_resumen_turno()
 
-    # ------------------- TAB HISTORIAL -------------------
     def crear_tab_historial(self):
         tab = QWidget()
         layout = QVBoxLayout()
-
         self.historial_table = QTableWidget()
         self.historial_table.setColumnCount(8)
         self.historial_table.setHorizontalHeaderLabels([
@@ -558,17 +575,12 @@ class VentanaCaja(QWidget):
         ])
         self.historial_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(self.historial_table)
-
-        btn_layout = QHBoxLayout()
         refresh_btn = QPushButton("Actualizar")
         refresh_btn.clicked.connect(self.cargar_historial)
-        btn_layout.addWidget(refresh_btn, alignment=Qt.AlignRight)
-        layout.addLayout(btn_layout)
-
+        layout.addWidget(refresh_btn, alignment=Qt.AlignRight)
         tab.setLayout(layout)
         return tab
 
-    # ------------------- MÉTODOS DE ACTUALIZACIÓN -------------------
     def verificar_estado_caja(self):
         query = """
             SELECT ac.id_apertura, ac.id_caja_fk, ac.monto_inicial, ac.fecha_hora_apertura,
@@ -611,6 +623,7 @@ class VentanaCaja(QWidget):
             self.monto_inicial_actual = 0
             for den, edit in self.inputs_cantidad.items():
                 edit.setText("0")
+            self.manual_amount.setValue(0)
             self.actualizar_totales_desde_conteo()
 
             ultimo_cierre = self.db.fetch_one("""
@@ -735,7 +748,6 @@ class VentanaCaja(QWidget):
         if not self.id_apertura_actual:
             return
 
-        # Obtener id_caja y fecha_hora_apertura
         apertura = self.db.fetch_one(
             "SELECT id_caja_fk, fecha_hora_apertura FROM apertura_cierre WHERE id_apertura = %s",
             (self.id_apertura_actual,)
@@ -745,7 +757,6 @@ class VentanaCaja(QWidget):
         id_caja = apertura['id_caja_fk']
         desde = apertura['fecha_hora_apertura']
 
-        # 1. Ventas normales (no mixtas)
         query_normales = """
             SELECT 
                 COALESCE(SUM(v.total) FILTER (WHERE v.forma_pago = 'EF' AND v.producto_pagado = TRUE), 0) AS efectivo,
@@ -765,7 +776,6 @@ class VentanaCaja(QWidget):
         deposito = float(normales.get('deposito', 0))
         cuentas_cobrar = float(normales.get('cuentas_cobrar', 0))
 
-        # 2. Ventas mixtas (desglose desde detalle_pago_mixto)
         query_mixtos = """
             SELECT 
                 COALESCE(SUM(dpm.monto) FILTER (WHERE dpm.forma_pago = 'EFECTIVO'), 0) AS efectivo,
@@ -784,7 +794,6 @@ class VentanaCaja(QWidget):
         transferencia += float(mixtos.get('transferencia', 0))
         deposito += float(mixtos.get('deposito', 0))
 
-        # 3. Pagos de apartados desglosados por forma de pago
         query_apartados = """
             SELECT 
                 COALESCE(SUM(da.monto) FILTER (WHERE da.forma_pago = 'EF'), 0) AS efectivo,
@@ -801,13 +810,6 @@ class VentanaCaja(QWidget):
         transferencia += float(aptos.get('transferencia', 0))
         deposito += float(aptos.get('deposito', 0))
 
-        # 4. Otros ingresos y egresos manuales
-        # Excluimos:
-        #   - movimientos de ventas normales (v.id_venta IS NOT NULL via id_movimiento_fk)
-        #   - movimientos de apartados (da.id_detalle IS NOT NULL)
-        #   - movimientos huerfanos de ventas MIXTAS (tienen "MIXTA" en descripcion,
-        #     porque se crean multiples movimientos por forma de pago pero solo el primero
-        #     queda linked a la venta via id_movimiento_fk)
         query_otros = """
             SELECT 
                 COALESCE(SUM(mc.monto) FILTER (WHERE mc.tipo_movimiento = 'EGRESO'), 0) AS egresos,
@@ -826,7 +828,6 @@ class VentanaCaja(QWidget):
 
         total_ventas_pagadas = efectivo + tarjeta + transferencia + deposito
         total_ventas_turno = total_ventas_pagadas + cuentas_cobrar
-        # Solo el efectivo físico entra a caja
         efectivo_en_caja = self.monto_inicial_actual + efectivo + otros_ingresos - egresos
 
         self.lbl_total_ventas.setText(f"Q {total_ventas_turno:,.2f}")

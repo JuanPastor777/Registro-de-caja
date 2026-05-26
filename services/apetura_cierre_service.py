@@ -75,27 +75,3 @@ class CajaService:
             print(f"🔒 Turno cerrado exitosamente a las {fecha_cierre.strftime('%H:%M:%S')}")
         else:
             print("❌ No se pudo cerrar el turno")
-# --- PRUEBA INTERACTIVA ---
-if __name__ == "__main__":
-    try:
-        db = DatabaseConnection()
-        caja = CajaService(db)
-        
-        print("\n--- PRUEBA DE CAJA ---")
-        # Ejemplo con los datos de tu tabla (Caja 3, Usuario 2)
-        id_ap = caja.abrir_caja(id_caja=3, id_usuario=2)
-        
-        if id_ap:
-            print("\nIngrese un valor para simular un ingreso...")
-            monto = float(input("Monto: Q"))
-            caja.registrar_transaccion(id_ap, monto, "INGRESO")
-            
-            print("\n Ingrese un valor para simular un egreso...")
-            monto = float(input("Monto: Q"))
-            caja.registrar_transaccion(id_ap, monto, "EGRESO")
-            
-            input("\nPresiona Enter para CERRAR LA CAJA...")
-            caja.cerrar_caja_definitivo(id_ap)
-            
-    except Exception as e:
-        print(f"❌ Error: {e}")

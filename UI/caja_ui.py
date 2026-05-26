@@ -1,4 +1,4 @@
-# UI/caja_ui.py
+# UI/caja_ui.py (sin monto manual)
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout,
@@ -14,6 +14,7 @@ from datetime import datetime
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.conexion import DatabaseConnection
+from services.reporte_pdf import GeneradorPDF
 
 class DialogoDenominaciones(QDialog):
     def __init__(self, titulo, detalles, parent=None):
@@ -41,6 +42,7 @@ class DialogoDenominaciones(QDialog):
         layout.addWidget(btn_box)
         self.setLayout(layout)
 
+
 class VentanaCaja(QWidget):
     caja_abierta_signal = pyqtSignal(int)
 
@@ -53,9 +55,11 @@ class VentanaCaja(QWidget):
         self.monto_inicial_actual = 0
         self.init_ui()
         self.verificar_estado_caja()
-        # Conectar señal de cambio de pestaña para cargar historial automáticamente
         self.tabs.currentChanged.connect(self.on_tab_changed)
 
+    # --------------------------------------------------------------
+    # INTERFAZ
+    # --------------------------------------------------------------
     def init_ui(self):
         layout = QVBoxLayout()
         layout.setSpacing(20)
@@ -82,16 +86,19 @@ class VentanaCaja(QWidget):
         self.setLayout(layout)
 
     def on_tab_changed(self, index):
-        if index == 2:  # Índice de la pestaña Historial
+        if index == 2:
             self.cargar_historial()
 
+    # --------------------------------------------------------------
+    # TAB APERTURA / CIERRE (sin monto manual)
+    # --------------------------------------------------------------
     def crear_tab_apertura_cierre(self):
         tab = QWidget()
         layout_principal = QHBoxLayout()
         layout_principal.setSpacing(25)
         layout_principal.setContentsMargins(15, 15, 15, 15)
 
-        # Panel izquierdo: conteo de efectivo
+        # Panel izquierdo: conteo de billetes
         grupo_conteo = QGroupBox("Conteo de efectivo")
         grupo_conteo.setStyleSheet("""
             QGroupBox { font-weight: bold; border: 1px solid #E5E7EB; border-radius: 12px; margin-top: 12px; padding-top: 15px; }
@@ -135,36 +142,6 @@ class VentanaCaja(QWidget):
 
         ly_conteo.addLayout(grid)
 
-        # --- Sección de monto manual directo ---
-        manual_group = QGroupBox("Monto manual (sin billetes)")
-        manual_group.setStyleSheet("""
-            QGroupBox { font-weight: bold; border: 1px solid #CBD5E1; border-radius: 12px; margin-top: 8px; padding-top: 10px; }
-        """)
-        manual_layout = QHBoxLayout()
-        manual_layout.setSpacing(10)
-
-        self.manual_total = QDoubleSpinBox()
-        self.manual_total.setMinimum(0)
-        self.manual_total.setMaximum(9999999)
-        self.manual_total.setPrefix("Q ")
-        self.manual_total.setValue(0)
-        self.manual_total.setMinimumWidth(150)
-        manual_layout.addWidget(QLabel("Monto único:"))
-        manual_layout.addWidget(self.manual_total)
-
-        btn_aplicar_manual = QPushButton("Aplicar monto manual (limpia billetes)")
-        btn_aplicar_manual.setStyleSheet("background-color: #3B82F6; color: white; border-radius: 6px; padding: 6px 12px;")
-        btn_aplicar_manual.clicked.connect(self.aplicar_monto_manual)
-        manual_layout.addWidget(btn_aplicar_manual)
-
-        btn_limpiar_billetes = QPushButton("Limpiar billetes")
-        btn_limpiar_billetes.setStyleSheet("background-color: #EF4444; color: white; border-radius: 6px; padding: 6px 12px;")
-        btn_limpiar_billetes.clicked.connect(self.limpiar_billetes)
-        manual_layout.addWidget(btn_limpiar_billetes)
-
-        manual_group.setLayout(manual_layout)
-        ly_conteo.addWidget(manual_group)
-
         self.lbl_total_conteo = QLabel("<b>TOTAL CONTEO: Q 0.00</b>")
         self.lbl_total_conteo.setAlignment(Qt.AlignRight)
         self.lbl_total_conteo.setStyleSheet("font-size: 14px; margin-top: 10px;")
@@ -173,7 +150,7 @@ class VentanaCaja(QWidget):
         grupo_conteo.setLayout(ly_conteo)
         layout_principal.addWidget(grupo_conteo, 2)
 
-        # Panel derecho: botones de apertura y cierre
+        # Panel derecho: botones
         ly_derecho = QVBoxLayout()
         ly_derecho.setSpacing(15)
 
@@ -214,20 +191,6 @@ class VentanaCaja(QWidget):
         except:
             self.inputs_cantidad[den].setText("0")
 
-    def limpiar_billetes(self):
-        for den in self.inputs_cantidad:
-            self.inputs_cantidad[den].setText("0")
-        self.manual_total.setValue(0)
-        self.actualizar_totales_desde_conteo()
-
-    def aplicar_monto_manual(self):
-        # Limpiar todos los billetes y usar el monto manual como total
-        for den in self.inputs_cantidad:
-            self.inputs_cantidad[den].setText("0")
-        # El total se actualizará automáticamente porque manual_total.value() se suma en actualizar_totales
-        self.actualizar_totales_desde_conteo()
-        QMessageBox.information(self, "Monto manual", f"Monto fijado a Q {self.manual_total.value():.2f}")
-
     def actualizar_totales_desde_conteo(self):
         total = 0
         for den, edit in self.inputs_cantidad.items():
@@ -238,8 +201,6 @@ class VentanaCaja(QWidget):
                 total += subtotal
             except:
                 self.labels_subtotal[den].setText("Q 0.00")
-        # Sumar monto manual
-        total += self.manual_total.value()
         self.lbl_total_conteo.setText(f"<b>TOTAL CONTEO: Q {total:,.2f}</b>")
         self.lbl_monto_inicial.setText(f"Q {total:,.2f}")
         return total
@@ -253,8 +214,6 @@ class VentanaCaja(QWidget):
                 subtotal = den * cant
                 detalles.append((den, cant, subtotal))
                 total += subtotal
-        total += self.manual_total.value()
-        # Para el cierre, el monto contado será el total (billetes + manual)
         return detalles, total
 
     def abrir_caja(self):
@@ -298,6 +257,9 @@ class VentanaCaja(QWidget):
         QMessageBox.information(self, "Éxito", f"Turno abierto correctamente con Q {total:,.2f}")
         self.verificar_estado_caja()
 
+    # --------------------------------------------------------------
+    # CIERRE DE CAJA CON GENERACIÓN DE PDF (sin cambios)
+    # --------------------------------------------------------------
     def cerrar_caja(self):
         if not self.id_apertura_actual:
             QMessageBox.warning(self, "Error", "No hay un turno abierto para cerrar.")
@@ -326,6 +288,7 @@ class VentanaCaja(QWidget):
         normales = self.db.fetch_one(query_normales, (id_caja, desde)) or {}
         efectivo_norm = float(normales.get('efectivo', 0))
 
+        # Ventas mixtas
         query_mixtos = """
             SELECT COALESCE(SUM(dpm.monto) FILTER (WHERE dpm.forma_pago = 'EFECTIVO'), 0) AS efectivo
             FROM detalle_pago_mixto dpm
@@ -337,6 +300,7 @@ class VentanaCaja(QWidget):
         mixtos = self.db.fetch_one(query_mixtos, (id_caja, desde)) or {}
         efectivo_mix = float(mixtos.get('efectivo', 0))
 
+        # Apartados en efectivo
         query_aptos_ef = """
             SELECT COALESCE(SUM(da.monto) FILTER (WHERE da.forma_pago = 'EF'), 0) AS efectivo
             FROM detalle_apartado da
@@ -346,6 +310,7 @@ class VentanaCaja(QWidget):
         aptos_ef = self.db.fetch_one(query_aptos_ef, (id_caja, desde)) or {}
         efectivo_apartados = float(aptos_ef.get('efectivo', 0))
 
+        # Otros ingresos y egresos
         query_otros = """
             SELECT 
                 COALESCE(SUM(mc.monto) FILTER (WHERE mc.tipo_movimiento = 'EGRESO'), 0) AS egresos,
@@ -387,6 +352,7 @@ class VentanaCaja(QWidget):
         if reply != QMessageBox.Yes:
             return
 
+        # Actualizar base de datos
         query_update = """
             UPDATE apertura_cierre
             SET 
@@ -415,17 +381,28 @@ class VentanaCaja(QWidget):
                 VALUES (%s, %s, %s, %s)
             """, (self.id_apertura_actual, den, cant, subtotal))
 
-        QMessageBox.information(self, "Éxito", "Turno cerrado correctamente")
+        # Generar PDF
+        try:
+            generador = GeneradorPDF(self.db)
+            ruta_pdf = generador.reporte_cierre_turno(self.id_apertura_actual)
+            QMessageBox.information(self, "Éxito",
+                                    f"Turno cerrado correctamente.\n\nPDF guardado en:\n{ruta_pdf}")
+        except Exception as e:
+            QMessageBox.warning(self, "Aviso",
+                                f"Turno cerrado, pero no se pudo generar el PDF:\n{str(e)}")
+
         self.verificar_estado_caja()
 
-    # ------------------- MÉTODOS DE MOVIMIENTOS Y RESUMEN -------------------
+    # --------------------------------------------------------------
+    # TAB MOVIMIENTOS Y RESUMEN (sin cambios)
+    # --------------------------------------------------------------
     def crear_tab_movimientos(self):
         tab = QWidget()
         layout = QVBoxLayout()
         layout.setSpacing(15)
         layout.setContentsMargins(10, 10, 10, 10)
 
-        # Resumen del turno en grid de 2 columnas
+        # Resumen del turno
         resumen_group = QGroupBox("Resumen del Turno Actual")
         resumen_group.setStyleSheet("""
             QGroupBox {
@@ -441,7 +418,6 @@ class VentanaCaja(QWidget):
         resumen_layout.setHorizontalSpacing(20)
         resumen_layout.setVerticalSpacing(8)
 
-        # Primera columna
         resumen_layout.addWidget(QLabel("TOTAL VENTAS DEL TURNO:"), 0, 0)
         self.lbl_total_ventas = QLabel("Q 0.00")
         self.lbl_total_ventas.setStyleSheet("font-size: 16px; font-weight: bold; color: #111827;")
@@ -462,7 +438,6 @@ class VentanaCaja(QWidget):
         self.lbl_ventas_transferencia.setStyleSheet("color: #8B5CF6;")
         resumen_layout.addWidget(self.lbl_ventas_transferencia, 3, 1)
 
-        # Segunda columna
         resumen_layout.addWidget(QLabel("📥 Depósito:"), 0, 2)
         self.lbl_ventas_deposito = QLabel("Q 0.00")
         self.lbl_ventas_deposito.setStyleSheet("color: #F59E0B;")
@@ -486,7 +461,7 @@ class VentanaCaja(QWidget):
         resumen_group.setLayout(resumen_layout)
         layout.addWidget(resumen_group)
 
-        # Formulario de movimientos en horizontal
+        # Formulario para registrar movimiento manual
         form_group = QGroupBox("Registrar Movimiento Manual")
         form_group.setStyleSheet("""
             QGroupBox {
@@ -543,7 +518,7 @@ class VentanaCaja(QWidget):
         self.movimientos_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(self.movimientos_table)
 
-        # Botón exportar
+        # Botón exportar turno
         btn_exportar_turno = QPushButton("Exportar turno actual a Excel")
         btn_exportar_turno.clicked.connect(self.exportar_turno)
         btn_exportar_turno.setStyleSheet("background-color: #F5C800; border-radius: 8px; padding: 6px;")
@@ -594,7 +569,9 @@ class VentanaCaja(QWidget):
         self.cargar_movimientos()
         self.actualizar_resumen_turno()
 
-    # ------------------- MÉTODOS DE HISTORIAL -------------------
+    # --------------------------------------------------------------
+    # TAB HISTORIAL
+    # --------------------------------------------------------------
     def crear_tab_historial(self):
         tab = QWidget()
         layout = QVBoxLayout()
@@ -606,14 +583,12 @@ class VentanaCaja(QWidget):
         ])
         self.historial_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(self.historial_table)
-        # Ya no hay botón actualizar, se carga automáticamente al cambiar de pestaña
         tab.setLayout(layout)
         return tab
 
-    # Los demás métodos (verificar_estado_caja, cargar_movimientos, actualizar_resumen_turno, cargar_historial, exportar_turno, etc.)
-    # se mantienen igual que en tu versión anterior. Solo asegúrate de que existan.
-    # Aquí incluyo los que faltan por completitud (ya los tenías, los copio desde la vers anterior)
-
+    # --------------------------------------------------------------
+    # MÉTODOS DE CARGA Y ACTUALIZACIÓN (sin monto manual)
+    # --------------------------------------------------------------
     def verificar_estado_caja(self):
         query = """
             SELECT ac.id_apertura, ac.id_caja_fk, ac.monto_inicial, ac.fecha_hora_apertura,
@@ -630,6 +605,7 @@ class VentanaCaja(QWidget):
             self.monto_inicial_actual = float(resultado['monto_inicial'])
             self.caja_abierta_signal.emit(self.id_caja_actual)
 
+            # Cargar detalles de apertura para mostrar en el conteo
             detalles_apertura = self.db.fetch_all("""
                 SELECT denominacion, cantidad FROM detalle_apertura WHERE id_apertura_fk = %s
             """, (self.id_apertura_actual,))
@@ -656,7 +632,6 @@ class VentanaCaja(QWidget):
             self.monto_inicial_actual = 0
             for den, edit in self.inputs_cantidad.items():
                 edit.setText("0")
-            self.manual_total.setValue(0)
             self.actualizar_totales_desde_conteo()
 
             ultimo_cierre = self.db.fetch_one("""
@@ -690,7 +665,6 @@ class VentanaCaja(QWidget):
             self.estado_frame.setStyleSheet("background-color: #FEE2E2; color: #DC2626; border-radius: 10px; padding: 15px;")
             self.apertura_btn.setEnabled(True)
             self.cierre_btn.setEnabled(False)
-            # No llamamos a cargar_historial aquí porque se cargará al cambiar de pestaña
             self.movimientos_table.setRowCount(0)
             # Limpiar resumen
             self.lbl_total_ventas.setText("Q 0.00")
@@ -703,7 +677,6 @@ class VentanaCaja(QWidget):
             self.lbl_egresos.setText("Q 0.00")
 
     def ver_denominaciones_ultimo_cierre(self):
-        # Obtener el ID de la última apertura cerrada
         query_ultimo_cierre = """
             SELECT id_apertura
             FROM apertura_cierre
@@ -717,8 +690,6 @@ class VentanaCaja(QWidget):
             return
 
         id_apertura = ultimo['id_apertura']
-
-        # Obtener los detalles de ese cierre específico
         query_detalles = """
             SELECT denominacion, cantidad, subtotal
             FROM detalle_cierre
@@ -733,6 +704,7 @@ class VentanaCaja(QWidget):
         detalles_list = [(d['denominacion'], d['cantidad'], float(d['subtotal'])) for d in detalles]
         dialog = DialogoDenominaciones("Denominaciones del último cierre", detalles_list, self)
         dialog.exec_()
+
     def cargar_movimientos(self):
         if not self.id_apertura_actual:
             self.movimientos_table.setRowCount(0)
@@ -789,7 +761,6 @@ class VentanaCaja(QWidget):
             self.movimientos_table.setItem(i, 3, QTableWidgetItem(m['descripcion']))
             self.movimientos_table.setItem(i, 4, QTableWidgetItem(f"Q {float(m['monto']):,.2f}"))
             self.movimientos_table.setItem(i, 5, QTableWidgetItem(m['nombre']))
-        self.actualizar_resumen_turno()
 
     def actualizar_resumen_turno(self):
         if not self.id_apertura_actual:

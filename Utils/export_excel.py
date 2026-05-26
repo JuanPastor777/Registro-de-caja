@@ -176,3 +176,4 @@ class ExportadorExcel:
         ws.column_dimensions['A'].width = 8
         ws.column_dimensions['B'].width = 12
         ws.column_dimensions['C'].width = 18
+

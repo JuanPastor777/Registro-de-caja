@@ -182,8 +182,3 @@ class VentanaGestionUsuarios(QWidget):
             self.cargar_datos()
             self.txt_nombre.clear(); self.txt_user.clear(); self.txt_pass.clear()
 
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    win = VentanaGestionUsuarios()
-    win.show()
-    sys.exit(app.exec_())

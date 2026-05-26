@@ -1044,9 +1044,3 @@ class VentanaApartados(QWidget):
                 QMessageBox.critical(self, "Error", resultado.get('message'))
 
 
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    ventana = VentanaApartados(id_usuario_actual=1, id_caja_actual=1)
-    ventana.resize(1200, 650)
-    ventana.show()
-    sys.exit(app.exec_())

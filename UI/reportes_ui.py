@@ -250,9 +250,3 @@ class VentanaReportes(QWidget):
             QMessageBox.critical(self, "Error", f"No se pudo generar el PDF:\n{str(e)}")
 
 
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    usuario_demo = {"id_usuario": 1, "nombre": "Administrador"}
-    ventana = VentanaReportes(usuario_demo)
-    ventana.show()
-    sys.exit(app.exec_())

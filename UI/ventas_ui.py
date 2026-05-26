@@ -1087,9 +1087,3 @@ class VentanasVentas(QWidget):
             QMessageBox.warning(self, "Error", resp.get('message', 'Error desconocido'))
 
 
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    win = VentanasVentas()
-    win.resize(1400, 860)
-    win.show()
-    sys.exit(app.exec_())

@@ -679,25 +679,3 @@ Q{cuenta.monto}
                 "No se pudo registrar el pago"
             )
 
-
-# =========================================================
-# MAIN
-# =========================================================
-if __name__ == "__main__":
-
-    app = QApplication(sys.argv)
-
-    # IDs de prueba
-    id_caja_actual = 1
-    id_usuario_actual = 1
-
-    ventana = VentanaCuentasPorCobrar(
-        id_caja_actual=id_caja_actual,
-        id_usuario_actual=id_usuario_actual
-    )
-
-    ventana.resize(1250, 650)
-
-    ventana.show()
-
-    sys.exit(app.exec_())

@@ -703,22 +703,36 @@ class VentanaCaja(QWidget):
             self.lbl_egresos.setText("Q 0.00")
 
     def ver_denominaciones_ultimo_cierre(self):
-        query = """
-            SELECT dc.denominacion, dc.cantidad, dc.subtotal
-            FROM detalle_cierre dc
-            JOIN apertura_cierre ac ON dc.id_apertura_fk = ac.id_apertura
-            WHERE ac.estado = 'CERRADO'
-            ORDER BY ac.fecha_hora_cierre DESC
-            LIMIT 100
+        # Obtener el ID de la última apertura cerrada
+        query_ultimo_cierre = """
+            SELECT id_apertura
+            FROM apertura_cierre
+            WHERE estado = 'CERRADO'
+            ORDER BY fecha_hora_cierre DESC
+            LIMIT 1
         """
-        detalles = self.db.fetch_all(query)
+        ultimo = self.db.fetch_one(query_ultimo_cierre)
+        if not ultimo:
+            QMessageBox.information(self, "Información", "No hay cierres registrados")
+            return
+
+        id_apertura = ultimo['id_apertura']
+
+        # Obtener los detalles de ese cierre específico
+        query_detalles = """
+            SELECT denominacion, cantidad, subtotal
+            FROM detalle_cierre
+            WHERE id_apertura_fk = %s
+            ORDER BY denominacion DESC
+        """
+        detalles = self.db.fetch_all(query_detalles, (id_apertura,))
         if not detalles:
             QMessageBox.information(self, "Información", "No hay detalles de denominaciones para el último cierre")
             return
+
         detalles_list = [(d['denominacion'], d['cantidad'], float(d['subtotal'])) for d in detalles]
         dialog = DialogoDenominaciones("Denominaciones del último cierre", detalles_list, self)
         dialog.exec_()
-
     def cargar_movimientos(self):
         if not self.id_apertura_actual:
             self.movimientos_table.setRowCount(0)

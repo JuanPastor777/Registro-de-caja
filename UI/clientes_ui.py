@@ -1,4 +1,3 @@
-# UI/clientes_ui.py
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QPushButton, QTableWidget, QTableWidgetItem,
                              QDialog, QFormLayout, QLineEdit, QMessageBox,
@@ -118,18 +117,7 @@ class VentanaClientes(QWidget):
         header.addWidget(title)
         header.addStretch()
 
-        add_btn = QPushButton("+ Nuevo Cliente")
-        add_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #F5C800;
-                border: none;
-                border-radius: 8px;
-                padding: 8px 16px;
-                font-weight: bold;
-            }
-        """)
-        add_btn.clicked.connect(self.agregar_cliente)
-        header.addWidget(add_btn)
+        # El botón "+ Nuevo Cliente" ha sido eliminado
 
         layout.addLayout(header)
 

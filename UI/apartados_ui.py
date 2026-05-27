@@ -450,15 +450,6 @@ class DialogoApartado(QDialog):
         self.fecha_inicio.setMinimumHeight(40)
         form_layout.addRow("📅 Fecha Inicio:", self.fecha_inicio)
 
-        # FORMA DE PAGO SIN MIXTO
-        self.forma_pago_combo = QComboBox()
-        self.forma_pago_combo.setMinimumHeight(40)
-        self.forma_pago_combo.addItem("💵 Efectivo", "EF")
-        self.forma_pago_combo.addItem("💳 Tarjeta", "TC/TD")
-        self.forma_pago_combo.addItem("🏦 Transferencia", "TF")
-        self.forma_pago_combo.addItem("📥 Depósito", "DP")
-        form_layout.addRow("💳 Forma de pago:", self.forma_pago_combo)
-
         # ENVÍO
         self.check_envio = QCheckBox("🚚 Este apartado es por envío")
         self.check_envio.setStyleSheet("font-weight: bold; margin-top: 8px; color: #1E293B;")
@@ -505,12 +496,17 @@ class DialogoApartado(QDialog):
         self.actualizar_combo_clientes(self.todos_clientes)
 
     def actualizar_combo_clientes(self, clientes):
+        line_edit = self.cliente_combo.lineEdit()
         self.cliente_combo.blockSignals(True)
+        line_edit.blockSignals(True)
+        texto_actual = line_edit.text()
         self.cliente_combo.clear()
         for cliente in clientes:
             nombre = f"{cliente['nombre']} {cliente['apellido']}" if cliente.get('apellido') else cliente['nombre']
             self.cliente_combo.addItem(nombre, cliente['id_cliente'])
+        line_edit.setText(texto_actual)
         self.cliente_combo.blockSignals(False)
+        line_edit.blockSignals(False)
 
     def buscar_cliente(self, texto):
         if not texto:
@@ -519,7 +515,6 @@ class DialogoApartado(QDialog):
         texto_lower = texto.lower()
         filtrados = [c for c in self.todos_clientes if texto_lower in f"{c['nombre']} {c.get('apellido', '')}".lower()]
         self.actualizar_combo_clientes(filtrados)
-        self.cliente_combo.lineEdit().setText(texto)
 
     def abrir_nuevo_cliente(self):
         dialog = DialogoNuevoCliente(self)
@@ -538,7 +533,10 @@ class DialogoApartado(QDialog):
         self.actualizar_combo_productos(self.todos_productos)
 
     def actualizar_combo_productos(self, productos):
+        line_edit = self.producto_combo.lineEdit()
         self.producto_combo.blockSignals(True)
+        line_edit.blockSignals(True)
+        texto_actual = line_edit.text()
         self.producto_combo.clear()
         for producto in productos:
             texto = producto['nombre']
@@ -547,7 +545,9 @@ class DialogoApartado(QDialog):
             if producto.get('modelo'):
                 texto += f" ({producto['modelo']})"
             self.producto_combo.addItem(texto, producto)
+        line_edit.setText(texto_actual)
         self.producto_combo.blockSignals(False)
+        line_edit.blockSignals(False)
 
     def buscar_producto(self, texto):
         if not texto:
@@ -559,7 +559,6 @@ class DialogoApartado(QDialog):
                     or (p.get('marca') and texto_lower in p['marca'].lower())
                     or (p.get('modelo') and texto_lower in p['modelo'].lower())]
         self.actualizar_combo_productos(filtrados)
-        self.producto_combo.lineEdit().setText(texto)
 
     def abrir_nuevo_producto(self):
         dialog = DialogoNuevoProducto(self)
@@ -654,8 +653,6 @@ class DialogoApartado(QDialog):
         es_envio = self.check_envio.isChecked()
         id_empresa = self.empresa_combo.currentData() if es_envio else None
         numero_guia = self.numero_guia_input.text().strip() if es_envio else None
-        forma_pago = self.forma_pago_combo.currentData()
-
         if monto_final <= 0:
             QMessageBox.warning(self, "Error", "❌ El total debe ser mayor a 0")
             return
@@ -669,8 +666,7 @@ class DialogoApartado(QDialog):
             'fecha_inicio': fecha,
             'es_envio': es_envio,
             'id_empresa_fk': id_empresa,
-            'numero_guia': numero_guia,
-            'forma_pago_acordada': forma_pago
+            'numero_guia': numero_guia
         }
 
         resultado = self.service.crear_apartado(data)
@@ -1042,5 +1038,3 @@ class VentanaApartados(QWidget):
                 self.cargar_apartados()
             else:
                 QMessageBox.critical(self, "Error", resultado.get('message'))
-
-

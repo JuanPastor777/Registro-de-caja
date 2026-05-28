@@ -1,7 +1,8 @@
 # UI/main_window.py
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QLabel,
                               QPushButton, QMessageBox, QHBoxLayout, QFrame,
-                              QGraphicsDropShadowEffect, QSizePolicy)
+                              QGraphicsDropShadowEffect, QSizePolicy, QScrollArea,
+                              QApplication)
 from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect, QTimer
 from PyQt5.QtGui import QFont, QColor, QLinearGradient, QPainter, QPalette, QPixmap
 import sys
@@ -36,7 +37,7 @@ class SidebarButton(QPushButton):
         self.text = text
         self._active = False
         self.setCursor(Qt.PointingHandCursor)
-        self.setFixedHeight(46)
+        self.setFixedHeight(42)
         self.update_text(expanded=True)
         self._apply_style()
 
@@ -57,9 +58,9 @@ class SidebarButton(QPushButton):
                     background-color: {C_AMARILLO};
                     color: #111111;
                     border: none;
-                    border-radius: 10px;
+                    border-radius: 8px;
                     text-align: left;
-                    padding: 10px 16px;
+                    padding: 8px 12px;
                     font-size: 13px;
                     font-weight: bold;
                     font-family: 'Segoe UI';
@@ -71,9 +72,9 @@ class SidebarButton(QPushButton):
                     background-color: transparent;
                     color: {C_SIDEBAR_TEXT};
                     border: none;
-                    border-radius: 10px;
+                    border-radius: 8px;
                     text-align: left;
-                    padding: 10px 16px;
+                    padding: 8px 12px;
                     font-size: 13px;
                     font-family: 'Segoe UI';
                 }}
@@ -82,45 +83,6 @@ class SidebarButton(QPushButton):
                     color: {C_WHITE};
                 }}
             """)
-
-class DashCard(QFrame):
-    def __init__(self, icon: str, title: str, subtitle: str,
-                 bg: str = C_WHITE, parent=None):
-        super().__init__(parent)
-        self.setFixedHeight(110)
-        self.setStyleSheet(f"""
-            QFrame {{
-                background-color: {bg};
-                border-radius: 16px;
-            }}
-        """)
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(18)
-        shadow.setOffset(0, 4)
-        shadow.setColor(QColor(0, 0, 0, 30))
-        self.setGraphicsEffect(shadow)
-
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(20, 14, 20, 14)
-        lay.setSpacing(16)
-
-        icon_lbl = QLabel(icon)
-        icon_lbl.setFont(QFont("Segoe UI Emoji", 28))
-        icon_lbl.setFixedWidth(50)
-        icon_lbl.setAlignment(Qt.AlignCenter)
-        lay.addWidget(icon_lbl)
-
-        text_lay = QVBoxLayout()
-        t = QLabel(title)
-        t.setFont(QFont("Segoe UI", 13, QFont.Bold))
-        t.setStyleSheet(f"color: {C_GRAY_700}; background: transparent;")
-        s = QLabel(subtitle)
-        s.setFont(QFont("Segoe UI", 10))
-        s.setStyleSheet(f"color: {C_GRAY_400}; background: transparent;")
-        text_lay.addWidget(t)
-        text_lay.addWidget(s)
-        text_lay.addStretch()
-        lay.addLayout(text_lay)
 
 class MainWindow(QMainWindow):
     def __init__(self, usuario_data):
@@ -136,8 +98,8 @@ class MainWindow(QMainWindow):
 
     def init_ui(self):
         self.setWindowTitle(f"Tec-Shop  ·  {self.usuario_data['nombre']}")
-        self.setGeometry(100, 100, 1280, 740)
-        self.setMinimumSize(1050, 620)
+        self.setGeometry(100, 100, 1200, 700)
+        self.setMinimumSize(900, 500)
         self.setStyleSheet(f"background-color: {C_CONTENT_BG};")
 
         central = QWidget()
@@ -147,20 +109,37 @@ class MainWindow(QMainWindow):
         main_layout.setSpacing(0)
         central.setLayout(main_layout)
 
+        self.sidebar_width = 220
+        self.sidebar_collapsed = False
         self.sidebar = self._crear_sidebar()
         main_layout.addWidget(self.sidebar)
 
         self.content_area = QWidget()
         self.content_area.setStyleSheet(f"background-color: {C_CONTENT_BG};")
         self.content_layout = QVBoxLayout()
-        self.content_layout.setContentsMargins(32, 28, 32, 28)
+        self.content_layout.setContentsMargins(24, 20, 24, 20)
+        self.content_layout.setSpacing(12)
         self.content_area.setLayout(self.content_layout)
-        main_layout.addWidget(self.content_area, 1)
+
+        self.content_scroll = QScrollArea()
+        self.content_scroll.setWidgetResizable(True)
+        self.content_scroll.setWidget(self.content_area)
+        self.content_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.content_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        main_layout.addWidget(self.content_scroll, 1)
+
+        screen_geometry = QApplication.primaryScreen().availableGeometry()
+        if screen_geometry.width() < 1300:
+            QTimer.singleShot(100, self.auto_collapse_sidebar)
+
+        self.showMaximized()
+
+    def auto_collapse_sidebar(self):
+        if not self.sidebar_collapsed:
+            self.toggle_sidebar()
 
     def _crear_sidebar(self):
         sidebar = QFrame()
-        self.sidebar_width = 255
-        self.sidebar_collapsed = False
         sidebar.setFixedWidth(self.sidebar_width)
         sidebar.setStyleSheet(f"background-color: {C_SIDEBAR_BG};")
 
@@ -171,54 +150,49 @@ class MainWindow(QMainWindow):
         sidebar.setGraphicsEffect(shadow)
 
         layout = QVBoxLayout()
-        layout.setContentsMargins(14, 28, 14, 20)
-        layout.setSpacing(8)
+        layout.setContentsMargins(12, 24, 12, 16)
+        layout.setSpacing(6)
 
-        # Botón toggle
         toggle_btn = QPushButton("☰")
-        toggle_btn.setFixedSize(40, 40)
+        toggle_btn.setFixedSize(38, 38)
         toggle_btn.setStyleSheet("background-color: transparent; color: white; font-size: 20px; border: none;")
         toggle_btn.clicked.connect(self.toggle_sidebar)
         layout.addWidget(toggle_btn, alignment=Qt.AlignLeft)
 
-        # Logo - SIN FONDO AMARILLO Y CENTRADO
         self.logo_frame = QFrame()
         self.logo_frame.setStyleSheet("background-color: transparent; border: none;")
         logo_lay = QHBoxLayout(self.logo_frame)
         logo_lay.setContentsMargins(0, 0, 0, 0)
         logo_lay.setSpacing(0)
 
-        # Cargar el logo desde assets/logo.png
         logo_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "logo.png")
         self.logo_pixmap = QPixmap(logo_path)
         self.logo_label = QLabel()
         if not self.logo_pixmap.isNull():
-            self.logo_label.setPixmap(self.logo_pixmap.scaled(160, 60, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self.logo_label.setPixmap(self.logo_pixmap.scaled(140, 50, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             self.logo_label.setAlignment(Qt.AlignCenter)
         else:
             self.logo_label.setText("🏪")
-            self.logo_label.setFont(QFont("Segoe UI Emoji", 28))
+            self.logo_label.setFont(QFont("Segoe UI Emoji", 26))
             self.logo_label.setAlignment(Qt.AlignCenter)
-        
+
         logo_lay.addWidget(self.logo_label)
         logo_lay.addStretch()
-        
-        # Centrar el logo_frame horizontalmente
+
         logo_container = QHBoxLayout()
         logo_container.addStretch()
         logo_container.addWidget(self.logo_frame)
         logo_container.addStretch()
         layout.addLayout(logo_container)
-        layout.addSpacing(20)
+        layout.addSpacing(16)
 
         sep_lbl = QLabel("MENÚ PRINCIPAL")
         sep_lbl.setFont(QFont("Segoe UI", 8, QFont.Bold))
-        sep_lbl.setStyleSheet(f"color: #4B5563; letter-spacing: 1.5px; padding: 10px 6px 4px 6px;")
+        sep_lbl.setStyleSheet(f"color: #4B5563; letter-spacing: 1.5px; padding: 8px 6px 2px 6px;")
         self.sep_lbl = sep_lbl
         layout.addWidget(sep_lbl)
 
         nav_items = [
-            ("🏠", "Dashboard",  self.show_dashboard),
             ("🛍️", "Ventas",     self.show_ventas),
             ("👥", "Clientes",   self.show_clientes),
             ("📦", "Productos",  self.show_productos),
@@ -238,86 +212,83 @@ class MainWindow(QMainWindow):
             self.sidebar_btns.append(btn)
             layout.addWidget(btn)
 
-        # Espacio flexible para empujar el panel de usuario hacia abajo
         layout.addStretch()
 
-        # Panel usuario - MEJORADO PARA CERRAR SESIÓN
         self.user_frame = QFrame()
         self.user_frame.setStyleSheet(f"""
             QFrame {{
                 background-color: #1F2937;
-                border-radius: 14px;
+                border-radius: 12px;
             }}
         """)
         u_lay = QVBoxLayout(self.user_frame)
-        u_lay.setContentsMargins(14, 12, 14, 12)
-        u_lay.setSpacing(6)
+        u_lay.setContentsMargins(12, 10, 12, 10)
+        u_lay.setSpacing(4)
 
         self.avatar_lbl = QLabel("👤  " + self.usuario_data['nombre'])
-        self.avatar_lbl.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        self.avatar_lbl.setFont(QFont("Segoe UI", 10, QFont.Bold))
         self.avatar_lbl.setStyleSheet(f"color: {C_WHITE}; background: transparent;")
         u_lay.addWidget(self.avatar_lbl)
 
         self.rol_lbl = QLabel(f"🔑  {self.usuario_data['rol'].capitalize()}")
-        self.rol_lbl.setFont(QFont("Segoe UI", 9))
+        self.rol_lbl.setFont(QFont("Segoe UI", 8))
         self.rol_lbl.setStyleSheet(f"color: {C_GRAY_400}; background: transparent;")
         u_lay.addWidget(self.rol_lbl)
 
-        u_lay.addSpacing(8)
-        
+        u_lay.addSpacing(6)
+
+        # ========== BOTÓN CERRAR SESIÓN CORREGIDO ==========
         self.logout_btn = QPushButton("⏻   Cerrar Sesión")
         self.logout_btn.setFixedHeight(34)
         self.logout_btn.setCursor(Qt.PointingHandCursor)
         self.logout_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: transparent;
-                color: {C_ACCENT_RED};
-                border: 1px solid #3B1414;
+                color: {C_WHITE};
+                border: 1px solid {C_ACCENT_RED};
                 border-radius: 8px;
                 font-size: 12px;
+                font-weight: 600;
                 font-family: 'Segoe UI';
                 text-align: center;
             }}
             QPushButton:hover {{
-                background-color: #3B1414;
+                background-color: {C_ACCENT_RED};
+                color: {C_WHITE};
             }}
         """)
         self.logout_btn.clicked.connect(self.cerrar_sesion)
         u_lay.addWidget(self.logout_btn)
 
         layout.addWidget(self.user_frame)
-        layout.addSpacing(4)
+        layout.addSpacing(2)
 
         sidebar.setLayout(layout)
         return sidebar
 
     def toggle_sidebar(self):
         self.sidebar_collapsed = not self.sidebar_collapsed
-        new_width = 70 if self.sidebar_collapsed else 255
+        new_width = 70 if self.sidebar_collapsed else self.sidebar_width
         self.sidebar.setFixedWidth(new_width)
-        # Ajustar textos de botones
         for btn in self.sidebar_btns:
             btn.update_text(not self.sidebar_collapsed)
-        # Ajustar logo: cambiar tamaño según colapsado
         if self.sidebar_collapsed:
             if not self.logo_pixmap.isNull():
-                self.logo_label.setPixmap(self.logo_pixmap.scaled(45, 45, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                self.logo_label.setPixmap(self.logo_pixmap.scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             else:
-                self.logo_label.setFont(QFont("Segoe UI Emoji", 20))
+                self.logo_label.setFont(QFont("Segoe UI Emoji", 18))
             self.sep_lbl.setVisible(False)
-            # Ajustar panel usuario para colapsado
             self.avatar_lbl.setText("👤")
             self.rol_lbl.setText("")
             self.logout_btn.setText("⏻")
-            self.logout_btn.setFixedWidth(36)
-            self.logout_btn.setFixedHeight(36)
+            self.logout_btn.setFixedWidth(34)
+            self.logout_btn.setFixedHeight(34)
         else:
             if not self.logo_pixmap.isNull():
-                self.logo_label.setPixmap(self.logo_pixmap.scaled(160, 60, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                self.logo_label.setPixmap(self.logo_pixmap.scaled(140, 50, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             else:
-                self.logo_label.setFont(QFont("Segoe UI Emoji", 28))
+                self.logo_label.setFont(QFont("Segoe UI Emoji", 26))
             self.sep_lbl.setVisible(True)
-            # Restaurar panel usuario para expandido
             self.avatar_lbl.setText("👤  " + self.usuario_data['nombre'])
             self.rol_lbl.setText(f"🔑  {self.usuario_data['rol'].capitalize()}")
             self.logout_btn.setText("⏻   Cerrar Sesión")
@@ -346,107 +317,39 @@ class MainWindow(QMainWindow):
             if child.widget():
                 child.widget().deleteLater()
 
-    def _page_header(self, icon: str, titulo: str, subtitulo: str = ""):
-        hdr = QFrame()
-        hdr.setStyleSheet("background: transparent;")
-        h = QHBoxLayout(hdr)
-        h.setContentsMargins(0, 0, 0, 0)
-
-        icon_lbl = QLabel(icon)
-        icon_lbl.setFont(QFont("Segoe UI Emoji", 26))
-        icon_lbl.setStyleSheet("background: transparent;")
-        h.addWidget(icon_lbl)
-
-        txt = QVBoxLayout()
-        t = QLabel(titulo)
-        t.setFont(QFont("Segoe UI", 18, QFont.Bold))
-        t.setStyleSheet(f"color: {C_GRAY_700}; background: transparent;")
-        txt.addWidget(t)
-        if subtitulo:
-            s = QLabel(subtitulo)
-            s.setFont(QFont("Segoe UI", 10))
-            s.setStyleSheet(f"color: {C_GRAY_400}; background: transparent;")
-            txt.addWidget(s)
-        h.addLayout(txt)
-        h.addStretch()
-        return hdr
-
-    def show_dashboard(self):
-        self.limpiar_contenido()
-        hdr = self._page_header("🏠", f"Bienvenido, {self.usuario_data['nombre']}",
-                                f"Rol: {self.usuario_data['rol'].capitalize()}")
-        self.content_layout.addWidget(hdr)
-        self.content_layout.addSpacing(20)
-        cards_row = QHBoxLayout()
-        cards_row.setSpacing(16)
-        cards_row.addWidget(DashCard("🏦", "Caja", "Gestionar apertura y cierre", C_WHITE))
-        cards_row.addWidget(DashCard("🛍️", "Ventas", "Registrar nuevas ventas", C_WHITE))
-        cards_row.addWidget(DashCard("📦", "Inventario", "Productos y stock", C_WHITE))
-        self.content_layout.addLayout(cards_row)
-        self.content_layout.addSpacing(16)
-        cards_row2 = QHBoxLayout()
-        cards_row2.setSpacing(16)
-        cards_row2.addWidget(DashCard("👥", "Clientes", "Base de clientes", C_WHITE))
-        cards_row2.addWidget(DashCard("📋", "Apartados", "Reservas y apartados", C_WHITE))
-        if self.usuario_data['rol'].lower() in ['gerente', 'supervisor', 'admin', 'administrador']:
-            cards_row2.addWidget(DashCard("📊", "Reportes", "Informes y estadísticas", C_WHITE))
-        self.content_layout.addLayout(cards_row2)
-        self.content_layout.addStretch()
-
     def show_ventas(self):
         self.limpiar_contenido()
-        hdr = self._page_header("🛍️", "Ventas", "Registrar y gestionar ventas")
-        self.content_layout.addWidget(hdr)
-        self.content_layout.addSpacing(12)
         widget = VentanasVentas(self.usuario_data, self.id_caja_actual)
         self.content_layout.addWidget(widget)
 
     def show_clientes(self):
         self.limpiar_contenido()
-        hdr = self._page_header("👥", "Clientes", "Administrar base de clientes")
-        self.content_layout.addWidget(hdr)
-        self.content_layout.addSpacing(12)
         widget = VentanaClientes()
         self.content_layout.addWidget(widget)
 
     def show_productos(self):
         self.limpiar_contenido()
-        hdr = self._page_header("📦", "Productos", "Inventario y catálogo")
-        self.content_layout.addWidget(hdr)
-        self.content_layout.addSpacing(12)
         widget = VentanaProductos()
         self.content_layout.addWidget(widget)
 
     def show_caja(self):
         self.limpiar_contenido()
-        hdr = self._page_header("🏦", "Caja", "Apertura, cierre y movimientos")
-        self.content_layout.addWidget(hdr)
-        self.content_layout.addSpacing(12)
         widget = VentanaCaja(self.usuario_data)
         self.content_layout.addWidget(widget)
         widget.caja_abierta_signal.connect(self.actualizar_id_caja)
 
     def show_apartados(self):
         self.limpiar_contenido()
-        hdr = self._page_header("📋", "Apartados", "Reservas y apartados de clientes")
-        self.content_layout.addWidget(hdr)
-        self.content_layout.addSpacing(12)
         widget = VentanaApartados(self.usuario_data['id_usuario'], self.id_caja_actual)
         self.content_layout.addWidget(widget)
 
     def show_reportes(self):
         self.limpiar_contenido()
-        hdr = self._page_header("📊", "Reportes", "Informes y análisis de ventas")
-        self.content_layout.addWidget(hdr)
-        self.content_layout.addSpacing(12)
         widget = VentanaReportes(self.usuario_data)
         self.content_layout.addWidget(widget)
 
     def show_usuarios(self):
         self.limpiar_contenido()
-        hdr = self._page_header("🔐", "Usuarios", "Administrar cuentas del personal")
-        self.content_layout.addWidget(hdr)
-        self.content_layout.addSpacing(12)
         widget = VentanaGestionUsuarios(self.usuario_data)
         self.content_layout.addWidget(widget)
 

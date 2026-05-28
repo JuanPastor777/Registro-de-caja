@@ -6,15 +6,15 @@ import string
 # --- FIX DE RUTAS PARA EVITAR EL ERROR DE IMPORTACIÓN ---
 ruta_ui = os.path.dirname(os.path.abspath(__file__))
 ruta_raiz = os.path.dirname(ruta_ui)
-# Agregamos las carpetas al sistema para que Python encuentre todo
 for r in [ruta_raiz, os.path.join(ruta_raiz, 'models')]:
     if r not in sys.path:
         sys.path.insert(0, r)
 
-from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QLabel, QLineEdit, QComboBox, QPushButton, 
-                             QTableWidget, QTableWidgetItem, QHeaderView, 
-                             QCheckBox, QMessageBox, QGroupBox, QFormLayout)
+from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
+                             QLabel, QLineEdit, QComboBox, QPushButton,
+                             QTableWidget, QTableWidgetItem, QHeaderView,
+                             QCheckBox, QMessageBox, QGroupBox, QFormLayout,
+                             QScrollArea, QSizePolicy)  # Agregados QScrollArea, QSizePolicy
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 
@@ -23,10 +23,8 @@ try:
     from models.usuario import Usuario
     from models.dao import UsuarioDAO
 except ImportError:
-    # Intento alternativo si no están en la carpeta models
-    #from usuario import Usuario
-    #from dao import UsuarioDAO
     from database.conexion import DatabaseConnection
+
 
 class VentanaGestionUsuarios(QWidget):
     def __init__(self, usuario_data=None):
@@ -37,11 +35,20 @@ class VentanaGestionUsuarios(QWidget):
 
     def init_ui(self):
         self.setWindowTitle("Control de Usuarios - POS")
-        self.setGeometry(100, 100, 1150, 650)
+        # Eliminar tamaño fijo, establecer tamaño mínimo más pequeño (para permitir scroll)
+        self.setMinimumSize(800, 500)
         self.setStyleSheet("background-color: #f9fafb;")
 
-        layout_principal = QVBoxLayout(self)
-        
+        # Contenedor principal con scroll
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+        # Widget interno que contendrá todo el contenido
+        container = QWidget()
+        layout_principal = QVBoxLayout(container)
+
         # Título
         header = QLabel("GESTIÓN DE ACCESOS Y PERSONAL")
         header.setFont(QFont("Segoe UI", 18, QFont.Bold))
@@ -52,17 +59,18 @@ class VentanaGestionUsuarios(QWidget):
 
         # --- PANEL IZQUIERDO: REGISTRO ---
         self.group_registro = QGroupBox("Nuevo Usuario / Edición")
-        self.group_registro.setFixedWidth(380)
+        # Cambiado setFixedWidth por setMaximumWidth para que pueda reducirse si es necesario
+        self.group_registro.setMaximumWidth(400)
         self.group_registro.setStyleSheet("""
             QGroupBox { border: 2px solid #F5C800; border-radius: 12px; margin-top: 10px; padding: 15px; background-color: white; font-weight: bold; }
             QLineEdit, QComboBox { padding: 8px; border: 1px solid #D1D5DB; border-radius: 6px; }
         """)
-        
+
         form_ly = QFormLayout()
-        
+
         self.txt_nombre = QLineEdit()
         self.txt_user = QLineEdit()
-        
+
         # Layout para password con generador
         pass_layout = QHBoxLayout()
         self.txt_pass = QLineEdit()
@@ -77,7 +85,7 @@ class VentanaGestionUsuarios(QWidget):
 
         self.cmb_rol = QComboBox()
         self.cmb_rol.addItems(["ADMIN", "CAJERO"])
-        
+
         self.chk_estado = QCheckBox("Usuario Activo")
         self.chk_estado.setChecked(True)
         self.chk_estado.setStyleSheet("color: #059669; font-weight: bold;")
@@ -89,7 +97,8 @@ class VentanaGestionUsuarios(QWidget):
         form_ly.addRow(self.chk_estado)
 
         self.btn_guardar = QPushButton("CREAR USUARIO")
-        self.btn_guardar.setStyleSheet("background-color: #F5C800; padding: 12px; font-weight: bold; border-radius: 8px;")
+        self.btn_guardar.setStyleSheet(
+            "background-color: #F5C800; padding: 12px; font-weight: bold; border-radius: 8px;")
         self.btn_guardar.clicked.connect(self.registrar)
         form_ly.addRow(self.btn_guardar)
 
@@ -98,29 +107,39 @@ class VentanaGestionUsuarios(QWidget):
 
         # --- PANEL DERECHO: TABLA Y ACCIONES ---
         derecha_layout = QVBoxLayout()
-        
+
         self.tabla = QTableWidget()
         self.tabla.setColumnCount(5)
         self.tabla.setHorizontalHeaderLabels(["ID", "Nombre", "User", "Rol", "Estado"])
         self.tabla.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.tabla.setSelectionBehavior(QTableWidget.SelectRows)
         self.tabla.setStyleSheet("background-color: white; border-radius: 10px; border: 1px solid #E5E7EB;")
-        
+
         # Botones de acción rápida
         btns_accion = QHBoxLayout()
         self.btn_estado = QPushButton("HABILITAR / DESHABILITAR SELECCIONADO")
-        self.btn_estado.setStyleSheet("background-color: #374151; color: white; padding: 10px; font-weight: bold; border-radius: 5px;")
+        self.btn_estado.setStyleSheet(
+            "background-color: #374151; color: white; padding: 10px; font-weight: bold; border-radius: 5px;")
         self.btn_estado.clicked.connect(self.cambiar_estado_usuario)
-        
+
         btns_accion.addWidget(self.btn_estado)
-        
+
         derecha_layout.addWidget(self.tabla)
         derecha_layout.addLayout(btns_accion)
-        
+
         cuerpo.addLayout(derecha_layout)
         layout_principal.addLayout(cuerpo)
-        
+
+        # Asignar el container al scroll y luego hacer scroll el widget principal
+        scroll.setWidget(container)
+        # Layout principal de la ventana
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(scroll)
+
         self.cargar_datos()
+        # Maximizar para aprovechar el espacio en pantalla pequeña
+        self.showMaximized()
 
     def generar_password(self):
         caracteres = string.ascii_letters + string.digits
@@ -137,7 +156,7 @@ class VentanaGestionUsuarios(QWidget):
             self.tabla.setItem(i, 1, QTableWidgetItem(u.nombre))
             self.tabla.setItem(i, 2, QTableWidgetItem(u.usuario))
             self.tabla.setItem(i, 3, QTableWidgetItem(u.rol))
-            
+
             estado_str = "🟢 ACTIVO" if u.estado else "🔴 INACTIVO"
             item_est = QTableWidgetItem(estado_str)
             item_est.setTextAlignment(Qt.AlignCenter)
@@ -150,16 +169,14 @@ class VentanaGestionUsuarios(QWidget):
             return
 
         id_u = int(self.tabla.item(fila, 0).text())
-        # Buscamos el objeto usuario para invertir su estado
         usuarios = self.dao.listar_todos()
         u_sel = next((x for x in usuarios if x.id_usuario == id_u), None)
 
         if u_sel:
             nuevo_estado = not u_sel.estado
-            # Llamada a la base de datos para actualizar solo el estado
             query = "UPDATE usuario SET estado = %s WHERE id_usuario = %s"
             self.db.execute_query(query, (nuevo_estado, id_u))
-            
+
             self.cargar_datos()
             msg = "habilitado" if nuevo_estado else "deshabilitado"
             QMessageBox.information(self, "Éxito", f"Usuario {u_sel.usuario} {msg}.")
@@ -180,5 +197,6 @@ class VentanaGestionUsuarios(QWidget):
         if self.dao.crear(nuevo):
             QMessageBox.information(self, "OK", "Guardado.")
             self.cargar_datos()
-            self.txt_nombre.clear(); self.txt_user.clear(); self.txt_pass.clear()
-
+            self.txt_nombre.clear()
+            self.txt_user.clear()
+            self.txt_pass.clear()

@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
     QFormLayout, QComboBox, QSpinBox, QDoubleSpinBox,
     QMessageBox, QHeaderView, QDialog, QCheckBox, QFrame,
     QSizePolicy, QApplication, QRadioButton, QButtonGroup,
-    QScrollArea  # ← NUEVO IMPORT
+    QScrollArea
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QColor
@@ -19,25 +19,24 @@ from services.empresa_envio_service import EmpresaEnvioService
 
 # ========== ESTILOS ==========
 ESTILO_GLOBAL = """
-    QWidget { font-family: 'Segoe UI'; font-size: 14px; background-color: #F8FAFC; color: #1E293B; }
+    QWidget { font-family: 'Segoe UI'; font-size: 13px; background-color: #F8FAFC; color: #1E293B; }
     QGroupBox { font-weight: bold; border: 1.5px solid #E2E8F0; border-radius: 12px; margin-top: 12px; padding-top: 12px; background: white; }
     QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 6px; background: white; }
-    QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { border: 1.5px solid #CBD5E1; border-radius: 8px; padding: 8px 12px; background: white; }
-    QPushButton { border-radius: 8px; padding: 8px 16px; font-weight: 600; border: none; background: #E2E8F0; }
+    QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { border: 1.5px solid #CBD5E1; border-radius: 8px; padding: 6px 10px; background: white; }
+    QPushButton { border-radius: 8px; padding: 6px 14px; font-weight: 600; border: none; background: #E2E8F0; }
     QPushButton:hover { background: #CBD5E1; }
     QTableWidget { border: 1.5px solid #E2E8F0; border-radius: 12px; background: white; gridline-color: #F1F5F9; }
-    QHeaderView::section { background: #F1F5F9; padding: 10px; font-weight: 700; }
+    QHeaderView::section { background: #F1F5F9; padding: 8px; font-weight: 700; }
     QScrollArea { border: none; background: transparent; }
-    QScrollBar:vertical { border: none; background: #F1F5F9; width: 10px; border-radius: 5px; }
-    QScrollBar::handle:vertical { background: #CBD5E1; border-radius: 5px; min-height: 20px; }
+    QScrollBar:vertical { border: none; background: #F1F5F9; width: 8px; border-radius: 4px; }
+    QScrollBar::handle:vertical { background: #CBD5E1; border-radius: 4px; min-height: 20px; }
     QScrollBar::handle:vertical:hover { background: #94A3B8; }
-    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
 """
-BTN_PRIMARY = "QPushButton { background: #F5C800; color: white; border-radius: 8px; padding: 10px 20px; font-weight: 700; } QPushButton:hover { background: #4F46E5; }"
-BTN_SUCCESS = "QPushButton { background: #10B981; color: white; border-radius: 8px; padding: 12px 24px; font-weight: 700; } QPushButton:hover { background: #059669; }"
-BTN_DANGER = "QPushButton { background: #FEE2E2; color: #DC2626; border-radius: 6px; padding: 4px 10px; font-weight: 700; }"
-BTN_OUTLINE = "QPushButton { background: white; color: #6366F1; border: 1.5px solid #6366F1; border-radius: 8px; padding: 8px 16px; } QPushButton:hover { background: #EEF2FF; }"
-BTN_SECONDARY = "QPushButton { background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; border-radius: 8px; padding: 8px 16px; } QPushButton:hover { background: #E2E8F0; }"
+BTN_PRIMARY = "QPushButton { background: #F5C800; color: white; border-radius: 8px; padding: 8px 16px; font-weight: 700; } QPushButton:hover { background: #4F46E5; }"
+BTN_SUCCESS = "QPushButton { background: #10B981; color: white; border-radius: 8px; padding: 10px 20px; font-weight: 700; } QPushButton:hover { background: #059669; }"
+BTN_DANGER = "QPushButton { background: #FEE2E2; color: #DC2626; border-radius: 6px; padding: 4px 8px; font-weight: 700; }"
+BTN_OUTLINE = "QPushButton { background: white; color: #6366F1; border: 1.5px solid #6366F1; border-radius: 8px; padding: 6px 12px; } QPushButton:hover { background: #EEF2FF; }"
+BTN_SECONDARY = "QPushButton { background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; border-radius: 8px; padding: 6px 12px; } QPushButton:hover { background: #E2E8F0; }"
 
 # ========== DIÁLOGOS ==========
 class DialogoNuevoCliente(QDialog):
@@ -99,7 +98,6 @@ class DialogoNuevoCliente(QDialog):
         else:
             QMessageBox.warning(self, "Error", "No se pudo guardar")
 
-
 class DialogoNuevoProducto(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -126,7 +124,7 @@ class DialogoNuevoProducto(QDialog):
         self.input_descripcion = QLineEdit()
         self.input_precio = QDoubleSpinBox()
         self.input_precio.setMinimum(0)
-        self.input_precio.setMaximum(999999.99)   # ← CORREGIDO: permite precios altos
+        self.input_precio.setMaximum(999999.99)
         self.input_precio.setPrefix("Q ")
         self.input_precio.setValue(0)
         form.addRow("Nombre *", self.input_nombre)
@@ -170,7 +168,6 @@ class DialogoNuevoProducto(QDialog):
             self.accept()
         else:
             QMessageBox.warning(self, "Error", "No se pudo guardar")
-
 
 class DialogoPagoMixto(QDialog):
     def __init__(self, total, parent=None):
@@ -256,7 +253,6 @@ class DialogoPagoMixto(QDialog):
         }
         self.accept()
 
-
 class DialogoSeleccionCliente(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -341,7 +337,6 @@ class DialogoSeleccionCliente(QDialog):
         cid = int(self.table.item(row, 0).text())
         self.cliente_seleccionado = next((c for c in self.clientes_data if c['id_cliente'] == cid), None)
         self.accept()
-
 
 class DialogoAjustePrecio(QDialog):
     def __init__(self, precio_original, parent=None):
@@ -438,7 +433,6 @@ class DialogoAjustePrecio(QDialog):
             'aumento_monto': self.aumento_monto
         }
 
-
 class DialogoNuevaEmpresaEnvio(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -497,7 +491,6 @@ class DialogoNuevaEmpresaEnvio(QDialog):
         else:
             QMessageBox.warning(self, "Error", "No se pudo guardar la empresa")
 
-
 # ========== VENTANA PRINCIPAL ==========
 class VentanasVentas(QWidget):
     def __init__(self, usuario_data=None, id_caja_actual=None):
@@ -522,17 +515,26 @@ class VentanasVentas(QWidget):
 
     def init_ui(self):
         self.setWindowTitle("Ventas — Tech Shop")
-        layout = QVBoxLayout()
-        layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
+        self.setMinimumSize(900, 500)  # Suficiente para 1366x768
+        # Scroll principal solo vertical
+        main_scroll = QScrollArea()
+        main_scroll.setWidgetResizable(True)
+        main_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        main_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setSpacing(12)
+        layout.setContentsMargins(16, 16, 16, 16)
+
+        # Header
         header = QHBoxLayout()
         titulo = QLabel(" Nueva Venta")
         titulo.setFont(QFont("Segoe UI", 18, QFont.Bold))
         header.addWidget(titulo)
         header.addStretch()
         self.lbl_caja = QLabel("⚡ Verificando caja...")
-        self.lbl_caja.setStyleSheet("background:#FEF3C7;color:#92400E;border-radius:16px;padding:6px 16px;font-weight:600")
+        self.lbl_caja.setStyleSheet("background:#FEF3C7;color:#92400E;border-radius:16px;padding:4px 12px;font-weight:600")
         header.addWidget(self.lbl_caja)
         layout.addLayout(header)
 
@@ -540,34 +542,40 @@ class VentanasVentas(QWidget):
 
         layout.addWidget(self.crear_panel_cliente())
 
+        # Panel de dos columnas con proporciones ajustadas
         contenido = QHBoxLayout()
-        contenido.setSpacing(20)
-        # Panel izquierdo con scroll
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll_area.setWidget(self.crear_panel_izquierdo())
-        contenido.addWidget(scroll_area, 4)
-        contenido.addWidget(self.crear_panel_carrito(), 6)
+        contenido.setSpacing(16)
+
+        # Panel izquierdo: máximo 380px para que no ocupe demasiado
+        panel_izq = self.crear_panel_izquierdo()
+        panel_izq.setMaximumWidth(400)
+        contenido.addWidget(panel_izq, 35)  # 35% del espacio
+
+        # Panel derecho: carrito optimizado
+        panel_carrito = self.crear_panel_carrito()
+        contenido.addWidget(panel_carrito, 65)  # 65% del espacio
+
         layout.addLayout(contenido)
 
-        self.setLayout(layout)
+        main_scroll.setWidget(container)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(main_scroll)
 
     def verificar_estado_caja(self):
         res = self.service.verificar_caja_abierta()
         if res['success']:
             self.lbl_caja.setText("✅ Caja abierta")
-            self.lbl_caja.setStyleSheet("background:#D1FAE5;color:#065F46;border-radius:16px;padding:6px 16px;font-weight:600")
+            self.lbl_caja.setStyleSheet("background:#D1FAE5;color:#065F46;border-radius:16px;padding:4px 12px;font-weight:600")
         else:
             self.lbl_caja.setText("❌ Sin caja abierta")
-            self.lbl_caja.setStyleSheet("background:#FEE2E2;color:#991B1B;border-radius:16px;padding:6px 16px;font-weight:600")
+            self.lbl_caja.setStyleSheet("background:#FEE2E2;color:#991B1B;border-radius:16px;padding:4px 12px;font-weight:600")
 
     def crear_panel_cliente(self):
         box = QGroupBox("Cliente")
         layout = QHBoxLayout()
         self.lbl_cliente = QLabel("Ningún cliente seleccionado")
-        self.lbl_cliente.setStyleSheet("padding:10px 16px;background:#F8FAFC;border:1.5px dashed #CBD5E1;border-radius:8px;color:#94A3B8")
+        self.lbl_cliente.setStyleSheet("padding:8px 12px;background:#F8FAFC;border:1.5px dashed #CBD5E1;border-radius:8px;color:#94A3B8")
         self.lbl_cliente.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addWidget(self.lbl_cliente)
 
@@ -577,7 +585,7 @@ class VentanasVentas(QWidget):
         layout.addWidget(btn_sel)
 
         btn_limpiar = QPushButton("✕")
-        btn_limpiar.setFixedSize(40, 40)
+        btn_limpiar.setFixedSize(36, 36)
         btn_limpiar.setStyleSheet(BTN_DANGER)
         btn_limpiar.clicked.connect(self.quitar_cliente)
         layout.addWidget(btn_limpiar)
@@ -588,7 +596,7 @@ class VentanasVentas(QWidget):
     def crear_panel_izquierdo(self):
         w = QWidget()
         ly = QVBoxLayout()
-        ly.setSpacing(15)
+        ly.setSpacing(12)
         ly.setContentsMargins(0, 0, 0, 0)
         ly.addWidget(self.crear_panel_producto())
         ly.addWidget(self.crear_panel_documento())
@@ -600,7 +608,7 @@ class VentanasVentas(QWidget):
     def crear_panel_producto(self):
         box = QGroupBox("Producto")
         ly = QVBoxLayout()
-        ly.setSpacing(10)
+        ly.setSpacing(8)
 
         top = QHBoxLayout()
         self.input_busqueda = QLineEdit()
@@ -771,12 +779,12 @@ class VentanasVentas(QWidget):
     def crear_panel_documento(self):
         box = QGroupBox("Documento")
         ly = QHBoxLayout()
-        ly.setSpacing(15)
+        ly.setSpacing(10)
 
         tipo_ly = QVBoxLayout()
         tipo_ly.addWidget(QLabel("Tipo:"))
         btns = QHBoxLayout()
-        btns.setSpacing(8)
+        btns.setSpacing(6)
         self.btn_fac = QPushButton("📄 Factura")
         self.btn_fac.setCheckable(True)
         self.btn_fac.setChecked(True)
@@ -803,15 +811,15 @@ class VentanasVentas(QWidget):
         self._tipo_doc = t
         self.btn_fac.setChecked(t == "FAC")
         self.btn_rec.setChecked(t == "REC")
-        estilo_activo = "background:#F5C800;color:white;border-radius:7px;padding:7px 14px;font-weight:700;border:none"
-        estilo_inactivo = "background:#F1F5F9;color:#64748B;border-radius:7px;padding:7px 14px;font-weight:600;border:1.5px solid #E2E8F0"
+        estilo_activo = "background:#F5C800;color:white;border-radius:7px;padding:6px 12px;font-weight:700;border:none"
+        estilo_inactivo = "background:#F1F5F9;color:#64748B;border-radius:7px;padding:6px 12px;font-weight:600;border:1.5px solid #E2E8F0"
         self.btn_fac.setStyleSheet(estilo_activo if t == "FAC" else estilo_inactivo)
         self.btn_rec.setStyleSheet(estilo_activo if t == "REC" else estilo_inactivo)
 
     def crear_panel_envio(self):
         self.box_envio = QGroupBox("Envío")
         ly = QVBoxLayout()
-        ly.setSpacing(8)
+        ly.setSpacing(6)
 
         toggle = QHBoxLayout()
         self.check_envio = QCheckBox("Esta venta es un envío")
@@ -822,7 +830,7 @@ class VentanasVentas(QWidget):
 
         self.frame_envio = QFrame()
         envio_ly = QFormLayout()
-        envio_ly.setSpacing(8)
+        envio_ly.setSpacing(6)
 
         empresa_layout = QHBoxLayout()
         self.combo_empresa = QComboBox()
@@ -872,7 +880,7 @@ class VentanasVentas(QWidget):
     def crear_panel_carrito(self):
         w = QWidget()
         ly = QVBoxLayout()
-        ly.setSpacing(12)
+        ly.setSpacing(10)
 
         top = QHBoxLayout()
         lbl = QLabel("Carrito de Venta")
@@ -880,21 +888,24 @@ class VentanasVentas(QWidget):
         top.addWidget(lbl)
         top.addStretch()
         self.lbl_items = QLabel("0 productos")
-        self.lbl_items.setStyleSheet("background:#EEF2FF;color:#4F46E5;border-radius:12px;padding:4px 12px;font-weight:600")
+        self.lbl_items.setStyleSheet("background:#EEF2FF;color:#4F46E5;border-radius:12px;padding:4px 10px;font-weight:600")
         top.addWidget(self.lbl_items)
         ly.addLayout(top)
 
         self.table = QTableWidget()
         self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(["Producto", "Cant.", "Precio Unit.", "Ajuste", "Subtotal", ""])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.table.setColumnWidth(5, 50)
+        self.table.setHorizontalHeaderLabels(["Producto", "Cant.", "Precio", "Ajuste", "Subtotal", ""])
+        # Configuración responsiva: las columnas se estiran, la última tiene ancho fijo
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setColumnWidth(5, 45)  # Botón eliminar
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        # Reducir altura de fila para que quepan más productos
+        self.table.verticalHeader().setDefaultSectionSize(30)
         ly.addWidget(self.table)
 
         pago_box = QGroupBox("Pago")
         pago_ly = QHBoxLayout()
-        pago_ly.setSpacing(20)
+        pago_ly.setSpacing(15)
 
         fp_col = QVBoxLayout()
         fp_col.addWidget(QLabel("Forma de pago:"))
@@ -917,9 +928,9 @@ class VentanasVentas(QWidget):
         ly.addWidget(pago_box)
 
         totales_frame = QFrame()
-        totales_frame.setStyleSheet("background:white;border:1.5px solid #E2E8F0;border-radius:12px;padding:10px")
+        totales_frame.setStyleSheet("background:white;border:1.5px solid #E2E8F0;border-radius:12px;padding:8px")
         totales_ly = QVBoxLayout()
-        totales_ly.setSpacing(6)
+        totales_ly.setSpacing(4)
 
         sub_row = QHBoxLayout()
         sub_row.addWidget(QLabel("Subtotal productos:"))
@@ -943,7 +954,7 @@ class VentanasVentas(QWidget):
         total_row.addWidget(QLabel("TOTAL:"))
         total_row.addStretch()
         self.lbl_total = QLabel("Q 0.00")
-        self.lbl_total.setFont(QFont("Segoe UI", 20, QFont.Bold))
+        self.lbl_total.setFont(QFont("Segoe UI", 18, QFont.Bold))
         self.lbl_total.setStyleSheet("color:#10B981")
         total_row.addWidget(self.lbl_total)
         totales_ly.addLayout(total_row)
@@ -952,7 +963,7 @@ class VentanasVentas(QWidget):
         ly.addWidget(totales_frame)
 
         botones = QHBoxLayout()
-        botones.setSpacing(10)
+        botones.setSpacing(8)
         btn_limpiar = QPushButton(" Limpiar Todo")
         btn_limpiar.clicked.connect(self.confirmar_limpiar)
         btn_limpiar.setStyleSheet(BTN_SECONDARY)
@@ -964,6 +975,7 @@ class VentanasVentas(QWidget):
         ly.addLayout(botones)
 
         w.setLayout(ly)
+        # El carrito confía en el scroll vertical principal; no necesita scroll propio
         return w
 
     def pago_cambiado(self):
@@ -984,12 +996,12 @@ class VentanasVentas(QWidget):
             self.cliente_actual = dlg.cliente_seleccionado
             nombre = f"{self.cliente_actual['nombre']} {self.cliente_actual.get('apellido', '')}".strip()
             self.lbl_cliente.setText(f"👤 {nombre}")
-            self.lbl_cliente.setStyleSheet("padding:10px 16px;background:#EEF2FF;border:1.5px solid #A5B4FC;border-radius:8px;color:#3730A3;font-weight:600")
+            self.lbl_cliente.setStyleSheet("padding:8px 12px;background:#EEF2FF;border:1.5px solid #A5B4FC;border-radius:8px;color:#3730A3;font-weight:600")
 
     def quitar_cliente(self):
         self.cliente_actual = None
         self.lbl_cliente.setText("Ningún cliente seleccionado")
-        self.lbl_cliente.setStyleSheet("padding:10px 16px;background:#F8FAFC;border:1.5px dashed #CBD5E1;border-radius:8px;color:#94A3B8")
+        self.lbl_cliente.setStyleSheet("padding:8px 12px;background:#F8FAFC;border:1.5px dashed #CBD5E1;border-radius:8px;color:#94A3B8")
 
     def cargar_productos(self):
         query = "SELECT id_producto, nombre, marca, modelo, precio_costo FROM producto ORDER BY nombre"
@@ -1085,5 +1097,3 @@ class VentanasVentas(QWidget):
             self.limpiar_todo()
         else:
             QMessageBox.warning(self, "Error", resp.get('message', 'Error desconocido'))
-
-

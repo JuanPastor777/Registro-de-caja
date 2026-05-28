@@ -14,7 +14,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.conexion import DatabaseConnection
 from services.reporte_service import ReporteService
-from services.reporte_pdf import GeneradorPDF          # <-- NUEVO
 from Utils.export_excel import ExportadorExcel
 
 
@@ -24,7 +23,6 @@ class VentanaReportes(QWidget):
         self.usuario_data = usuario_data
         self.db = DatabaseConnection()
         self.reporte_service = ReporteService()
-        self.generador_pdf = GeneradorPDF(self.db)     # <-- NUEVO
         self.init_ui()
         self.cargar_usuarios()
 
@@ -107,7 +105,7 @@ class VentanaReportes(QWidget):
         layout.addWidget(self.tabla)
 
         # =========================
-        # BOTONES DE EXPORTACIÓN
+        # BOTONES DE EXPORTACIÓN (SOLO EXCEL)
         # =========================
         botones_layout = QHBoxLayout()
         botones_layout.setSpacing(15)
@@ -127,23 +125,6 @@ class VentanaReportes(QWidget):
             }
         """)
         botones_layout.addWidget(btn_exportar_excel)
-
-        # NUEVO BOTÓN PDF
-        btn_exportar_pdf = QPushButton("📄 Exportar a PDF (Profesional)")
-        btn_exportar_pdf.clicked.connect(self.exportar_pdf)
-        btn_exportar_pdf.setStyleSheet("""
-            QPushButton {
-                background-color: #EF4444;
-                color: white;
-                padding: 10px;
-                border-radius: 8px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #DC2626;
-            }
-        """)
-        botones_layout.addWidget(btn_exportar_pdf)
 
         layout.addLayout(botones_layout)
         self.setLayout(layout)
@@ -213,40 +194,3 @@ class VentanaReportes(QWidget):
                 QMessageBox.information(self, "Éxito", f"Reporte guardado en:\n{ruta}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"No se pudo generar el reporte Excel:\n{str(e)}")
-
-    # ==================== NUEVO MÉTODO PARA PDF ====================
-    def exportar_pdf(self):
-        try:
-            desde = self.fecha_desde.date().toPyDate()
-            hasta = self.fecha_hasta.date().toPyDate()
-
-            # Si es un solo día → reporte diario de caja (formato Excel unificado)
-            if desde == hasta:
-                pdf_buffer = self.generador_pdf.reporte_diario_caja(desde)
-                nombre_archivo = f"Reporte_Diario_Caja_{desde.strftime('%Y%m%d')}.pdf"
-                ruta, _ = QFileDialog.getSaveFileName(self, "Guardar Reporte Diario", nombre_archivo, "PDF files (*.pdf)")
-                if ruta:
-                    with open(ruta, 'wb') as f:
-                        f.write(pdf_buffer.getbuffer())
-                    QMessageBox.information(self, "Éxito", f"Reporte diario guardado en:\n{ruta}")
-
-            # Si es un rango dentro del mismo mes → reporte mensual resumido
-            elif desde.month == hasta.month and desde.year == hasta.year:
-                pdf_buffer = self.generador_pdf.reporte_mensual_ventas(desde.year, desde.month)
-                nombre_mes = desde.strftime("%B_%Y")
-                nombre_archivo = f"Reporte_Mensual_{nombre_mes}.pdf"
-                ruta, _ = QFileDialog.getSaveFileName(self, "Guardar Reporte Mensual", nombre_archivo, "PDF files (*.pdf)")
-                if ruta:
-                    with open(ruta, 'wb') as f:
-                        f.write(pdf_buffer.getbuffer())
-                    QMessageBox.information(self, "Éxito", f"Reporte mensual guardado en:\n{ruta}")
-
-            else:
-                QMessageBox.warning(self, "Rango no soportado",
-                    "Para rangos mayores a un mes, por favor use la exportación a Excel.\n"
-                    "El PDF profesional está disponible para un día específico o un mes completo.")
-
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"No se pudo generar el PDF:\n{str(e)}")
-
-

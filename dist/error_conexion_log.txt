@@ -1,0 +1,8 @@
+--- ERROR DE CONEXIÓN EN TU BASE DE DATOS LOCAL ---
+
+Detalle técnico del fallo: connection to server at "127.0.0.1", port 5432 failed: Connection refused (0x0000274D/10061)
+	Is the server running on that host and accepting TCP/IP connections?
+
+
+Parámetros intentados: Host: 127.0.0.1, Puerto: 5432, Usuario: postgres
+¿Verificaste que la contraseña en db_config.py coincida con la de DBeaver?

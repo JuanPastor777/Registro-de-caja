@@ -1,8 +1,24 @@
 import sys
 import os
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config.db_config import DatabaseConfig
+# 👇 SOLUCIÓN PARA RUTAS EN EJECUTABLES (.EXE)
+# Detecta si el programa corre desde VS Code o ya compilado como ejecutable frozen por PyInstaller
+if getattr(sys, 'frozen', False):
+    base_dir = os.path.dirname(sys.executable)
+else:
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+if base_dir not in sys.path:
+    sys.path.append(base_dir)
+
+try:
+    from config.db_config import DatabaseConfig
+except ImportError:
+    # Intento de respaldo si la estructura de paquetes cambia al empaquetar
+    try:
+        from db_config import DatabaseConfig
+    except ImportError:
+        raise ImportError("No se pudo encontrar el módulo DatabaseConfig en el sistema.")
 
 try:
     import psycopg2
@@ -15,7 +31,7 @@ except ImportError:
 
 
 class DatabaseConnection:
-    """Maneja la conexión con Supabase PostgreSQL"""
+    """Maneja la conexión con la base de datos PostgreSQL local"""
 
     def __init__(self):
         self.connection = None
@@ -28,16 +44,30 @@ class DatabaseConnection:
             self.connection = psycopg2.connect(**params)
             self.connection.autocommit = False
 
-            # 👇 Fijar zona horaria a Guatemala
+            # Fijar zona horaria a Guatemala
             with self.connection.cursor() as cur:
                 cur.execute("SET TIME ZONE 'America/Guatemala'")
 
+            # Se mantiene RealDictCursor para que el backend lea los campos como diccionarios
             self.cursor = self.connection.cursor(
                 cursor_factory=psycopg2.extras.RealDictCursor
             )
-            print("Conexión establecida (zona: America/Guatemala).")
+            print("Conexión establecida localmente (zona: America/Guatemala).")
             return True
         except psycopg2.OperationalError as e:
+            # 👇 TIP DE ORO: Si el .exe falla, creará este archivo de texto a la par para decirte exactamente por qué
+            try:
+                folder_log = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.getcwd()
+                ruta_log = os.path.join(folder_log, "error_conexion_log.txt")
+                with open(ruta_log, "w", encoding="utf-8") as f:
+                    f.write(f"--- ERROR DE CONEXIÓN EN TU BASE DE DATOS LOCAL ---\n\n")
+                    f.write(f"Detalle técnico del fallo: {str(e)}\n\n")
+                    f.write(
+                        f"Parámetros intentados: Host: {params.get('host')}, Puerto: {params.get('port')}, Usuario: {params.get('user')}\n")
+                    f.write(f"¿Verificaste que la contraseña en db_config.py coincida con la de DBeaver?\n")
+            except Exception:
+                pass
+
             print(f"Error al conectar: {e}")
             return False
 
@@ -65,7 +95,8 @@ class DatabaseConnection:
             self.connection.commit()
             return True
         except Exception as e:
-            self.connection.rollback()
+            if self.connection:
+                self.connection.rollback()
             print(f"Error en execute_query: {e}")
             return False
 
@@ -77,7 +108,8 @@ class DatabaseConnection:
             self.connection.commit()
             return self.cursor.fetchone()
         except Exception as e:
-            self.connection.rollback()
+            if self.connection:
+                self.connection.rollback()
             print(f"Error en fetch_one: {e}")
             return None
 
@@ -89,7 +121,8 @@ class DatabaseConnection:
             self.connection.commit()
             return self.cursor.fetchall()
         except Exception as e:
-            self.connection.rollback()
+            if self.connection:
+                self.connection.rollback()
             print(f"Error en fetch_all: {e}")
             return []
 

@@ -1,21 +1,19 @@
-
-
 class DatabaseConfig:
-    """Configuracion de la base de datos Supabase"""
+    """Configuración de la base de datos LOCAL (DBeaver)"""
 
     DB_CONFIG = {
-        'host': 'db.tlrershlxqyelcxcqgjc.supabase.co',
-        'port': 5432,
-        'database': 'postgres',
-        'user': 'postgres',
-        'password': 'Techshopgt4321.'
+        'host': '127.0.0.1',              # Apunta a tu propia computadora (localhost)
+        'port': 5432,                     # Puerto estándar de tu PostgreSQL
+        'database': 'postgres',           # Nombre de tu base de datos local
+        'user': 'postgres',               # Usuario predeterminado
+        'password': '1313'  # 👈 REEMPLAZA ESTO CON TU CONTRASEÑA DE DBEAVER
     }
 
     @staticmethod
     def get_connection_params():
-
         params = DatabaseConfig.DB_CONFIG.copy()
-        params['sslmode'] = 'require'
+        # Al ser local, desactivamos SSL para evitar conflictos con el ejecutable y acelerar la conexión
+        params['sslmode'] = 'disable'
         return params
 
     @staticmethod
@@ -24,5 +22,5 @@ class DatabaseConfig:
         return (
             f"host={c['host']} port={c['port']} "
             f"dbname={c['database']} user={c['user']} "
-            f"password={c['password']} sslmode=require"
+            f"password={c['password']} sslmode=disable"
         )
